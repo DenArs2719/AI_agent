@@ -7,7 +7,6 @@ import AI.agent.demo.dto.CreateAppointmentRequest;
 import AI.agent.demo.dto.SchedulingMatchResponse;
 import AI.agent.demo.dto.TroubleshootingScript;
 import AI.agent.demo.model.Appointment;
-import AI.agent.demo.model.AppointmentStatus;
 import AI.agent.demo.model.CallSession;
 import AI.agent.demo.model.ConversationStage;
 import AI.agent.demo.repository.AppointmentRepository;
@@ -17,6 +16,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -28,6 +28,10 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 public class VoiceWebhookService {
 	private static final String LOCAL_DEMO_CALL_SID = "LOCAL_DEMO_CALL";
+	private static final Set<ConversationStage> NON_RESUMABLE_STAGES = Set.of(
+			ConversationStage.APPOINTMENT_CONFIRMED,
+			ConversationStage.FAILED,
+			ConversationStage.ABANDONED);
 
 	private final CallSessionRepository callSessionRepository;
 	private final AiDiagnosticService aiDiagnosticService;
@@ -40,7 +44,7 @@ public class VoiceWebhookService {
 	public String incomingCallInstructions(String callSid, String callerPhoneNumber) {
 		CallSession session = getOrCreateSession(callSid);
 		captureCallerPhoneNumber(session, callerPhoneNumber);
-		if (isNewSession(session) && linkExistingAppointment(session)) {
+		if (isNewSession(session) && (linkExistingAppointment(session) || linkIncompleteSession(session))) {
 			callSessionRepository.save(session);
 			return response(gather(
 					"/voice/respond",
@@ -73,6 +77,9 @@ public class VoiceWebhookService {
 		}
 		if (session.getCurrentStage() == ConversationStage.RETURNING_CALLER) {
 			return handleReturningCaller(session, speechResult.trim());
+		}
+		if (session.getCurrentStage() == ConversationStage.RESUME_INCOMPLETE_SESSION) {
+			return handleResumeIncompleteSession(session, speechResult.trim());
 		}
 		AiDialogueResult aiDialogueResult;
 		try {
@@ -134,15 +141,30 @@ public class VoiceWebhookService {
 			return false;
 		}
 		return appointmentRepository
-				.findFirstByCustomerPhoneNumberAndStatusNotOrderByScheduledAtDesc(
-						session.getCallerPhoneNumber(),
-						AppointmentStatus.CANCELED)
+				.findLatestActiveAppointmentByCustomerPhoneNumber(session.getCallerPhoneNumber())
 				.map(appointment -> {
 					session.setAppointmentId(appointment.getId());
 					session.setCustomerName(customerNameFor(appointment));
 					session.setApplianceType(appointment.getApplianceSpecialty());
 					session.setZipCode(appointment.getCustomer().getZipCode());
 					session.setCurrentStage(ConversationStage.RETURNING_CALLER);
+					return true;
+				})
+				.orElse(false);
+	}
+
+	private boolean linkIncompleteSession(CallSession session) {
+		if (!StringUtils.hasText(session.getCallerPhoneNumber())) {
+			return false;
+		}
+		return callSessionRepository
+				.findLatestIncompleteSessionByCallerPhoneNumber(
+						session.getCallerPhoneNumber(),
+						session.getCallSid(),
+						NON_RESUMABLE_STAGES)
+				.map(previousSession -> {
+					copyDiagnosticState(previousSession, session);
+					session.setCurrentStage(ConversationStage.RESUME_INCOMPLETE_SESSION);
 					return true;
 				})
 				.orElse(false);
@@ -225,7 +247,7 @@ public class VoiceWebhookService {
 		if (isExistingAppointmentIntent(speech)) {
 			session.setCurrentStage(ConversationStage.APPOINTMENT_CONFIRMED);
 			callSessionRepository.save(session);
-			return response(say("I found your existing appointment.The appointment remains confirmed. "
+			return response(say("I found your existing appointment. The appointment remains confirmed. "
 					+ "Thank you for calling Sears Home Services."));
 		}
 		return response(gather(
@@ -233,6 +255,44 @@ public class VoiceWebhookService {
 				"speech",
 				"auto",
 				"Please say existing appointment if you are calling about that appointment, or new issue to start a new service request."));
+	}
+
+	private String handleResumeIncompleteSession(CallSession session, String speech) {
+		if (isNewIssueIntent(speech)) {
+			startNewIssue(session);
+			callSessionRepository.save(session);
+			return response(gather(
+					"/voice/respond",
+					"speech",
+					"auto",
+					"No problem. " + questionFor(session)));
+		}
+		if (isContinueIntent(speech)) {
+			session.setCurrentStage(nextMissingStage(session));
+			callSessionRepository.save(session);
+			return response(gather(
+					"/voice/respond",
+					"speech",
+					"auto",
+					"Let's continue. " + questionFor(session)));
+		}
+		return response(gather(
+				"/voice/respond",
+				"speech",
+				"auto",
+				"Please say continue to resume the request we started, or new issue to start over."));
+	}
+
+	private void copyDiagnosticState(CallSession source, CallSession target) {
+		target.setApplianceType(source.getApplianceType());
+		target.setSymptoms(source.getSymptoms());
+		target.setErrorCodes(source.getErrorCodes());
+		target.setPriorTroubleshootingSteps(source.getPriorTroubleshootingSteps());
+		target.setZipCode(source.getZipCode());
+		target.setCustomerName(source.getCustomerName());
+		target.setAvailability(source.getAvailability());
+		target.setProposedSlotId(source.getProposedSlotId());
+		target.setProposedTechnicianName(source.getProposedTechnicianName());
 	}
 
 	private void startNewIssue(CallSession session) {
@@ -351,6 +411,14 @@ public class VoiceWebhookService {
 				|| normalizedSpeech.contains("new service");
 	}
 
+	private boolean isContinueIntent(String speech) {
+		String normalizedSpeech = speech.toLowerCase(Locale.ROOT);
+		return normalizedSpeech.contains("continue")
+				|| normalizedSpeech.contains("resume")
+				|| normalizedSpeech.contains("same request")
+				|| normalizedSpeech.contains("yes");
+	}
+
 	private void applyUpdates(CallSession session, CallSessionUpdates updates) {
 		if (session.getApplianceType() == null && updates.applianceType() != null) {
 			session.setApplianceType(updates.applianceType());
@@ -425,6 +493,7 @@ public class VoiceWebhookService {
 			case CUSTOMER_NAME -> "What is your name?";
 			case AVAILABILITY -> "What day and time works best for the appointment?";
 			case READY_TO_SCHEDULE -> "I have enough information to look for appointment times.";
+			case RESUME_INCOMPLETE_SESSION -> "I see we started a service request earlier. Would you like to continue that request or start a new issue?";
 			case RETURNING_CALLER -> "I found an existing appointment for this phone number. Are you calling about that appointment or a new appliance issue?";
 			case SLOT_CONFIRMATION -> "Would you like to confirm the proposed appointment?";
 			case APPOINTMENT_CONFIRMED -> "Your appointment is confirmed.";

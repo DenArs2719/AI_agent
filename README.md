@@ -63,7 +63,11 @@ The voice flow is intentionally split between AI extraction and deterministic ba
    - Waits for verbal confirmation.
    - Creates and confirms the appointment.
 
-Each Twilio call has its own `CallSid`, and the application uses that value as the unique key for a `CallSession`. If the same customer calls again later, Twilio sends a new `CallSid`, so the app creates a new `CallSession` even when the caller phone number is the same. On a new call, the app also checks `caller_phone_number` for the latest non-canceled appointment. If one exists, the session moves to `RETURNING_CALLER` and asks whether the caller is calling about the existing appointment or a new appliance issue.
+Each Twilio call has its own `CallSid`, and the application uses that value as the unique key for a `CallSession`. If the same customer calls again later, Twilio sends a new `CallSid`, so the app creates a new `CallSession` even when the caller phone number is the same.
+
+On a new call, the app first checks `caller_phone_number` for the latest non-canceled appointment. If one exists, the session moves to `RETURNING_CALLER` and asks whether the caller is calling about the existing appointment or a new appliance issue.
+
+If no appointment exists, the app checks for the latest unfinished `CallSession` from the same phone number. If one exists, it copies the previously captured diagnostic fields into the new session, moves to `RESUME_INCOMPLETE_SESSION`, and asks whether the caller wants to continue the previous request or start over.
 
 ### Conversation Stages
 
@@ -78,6 +82,7 @@ ZIP_CODE
 CUSTOMER_NAME
 AVAILABILITY
 READY_TO_SCHEDULE
+RESUME_INCOMPLETE_SESSION
 RETURNING_CALLER
 SLOT_CONFIRMATION
 APPOINTMENT_CONFIRMED
@@ -140,6 +145,9 @@ Indexes support the main scheduling query:
 - `technician_specialties(technician_id)`
 - `availability_slots(booked, starts_at, ends_at)`
 - `availability_slots(technician_id)`
+- `customers(phone_number)`
+- `appointments(status, scheduled_at)`
+- `call_sessions(caller_phone_number, appointment_id, current_stage, id)`
 
 Availability phrases are mapped to time windows:
 

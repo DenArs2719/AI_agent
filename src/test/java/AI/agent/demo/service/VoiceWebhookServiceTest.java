@@ -76,9 +76,7 @@ class VoiceWebhookServiceTest {
 		Appointment appointment = mock(Appointment.class);
 		Customer customer = mock(Customer.class);
 		when(callSessionRepository.findByCallSid("CA_RETURN")).thenReturn(Optional.empty());
-		when(appointmentRepository.findFirstByCustomerPhoneNumberAndStatusNotOrderByScheduledAtDesc(
-				"+17735550101",
-				AppointmentStatus.CANCELED))
+		when(appointmentRepository.findLatestActiveAppointmentByCustomerPhoneNumber("+17735550101"))
 				.thenReturn(Optional.of(appointment));
 		when(appointment.getId()).thenReturn(501L);
 		when(appointment.getCustomer()).thenReturn(customer);
@@ -98,6 +96,71 @@ class VoiceWebhookServiceTest {
 		assertThat(sessionCaptor.getValue().getApplianceType()).isEqualTo(ApplianceSpecialty.REFRIGERATOR);
 		assertThat(sessionCaptor.getValue().getZipCode()).isEqualTo("60601");
 		assertThat(sessionCaptor.getValue().getCurrentStage()).isEqualTo(ConversationStage.RETURNING_CALLER);
+	}
+
+	@Test
+	void incomingCallInstructionsLinksIncompleteSessionWhenNoAppointmentExists() {
+		CallSession previousSession = new CallSession("CA_OLD");
+		previousSession.setApplianceType(ApplianceSpecialty.WASHER);
+		previousSession.setSymptoms("Washer is leaking");
+		previousSession.setZipCode("60601");
+		previousSession.setCurrentStage(ConversationStage.ERROR_CODES);
+		when(callSessionRepository.findByCallSid("CA_NEW")).thenReturn(Optional.empty());
+		when(appointmentRepository.findLatestActiveAppointmentByCustomerPhoneNumber("+17735550101"))
+				.thenReturn(Optional.empty());
+		when(callSessionRepository.findLatestIncompleteSessionByCallerPhoneNumber(
+				eq("+17735550101"),
+				eq("CA_NEW"),
+				any()))
+				.thenReturn(Optional.of(previousSession));
+		when(callSessionRepository.save(any(CallSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		String twiml = voiceWebhookService.incomingCallInstructions("CA_NEW", "+17735550101");
+
+		assertThat(twiml).contains("I see we started a service request earlier");
+		ArgumentCaptor<CallSession> sessionCaptor = ArgumentCaptor.forClass(CallSession.class);
+		verify(callSessionRepository).save(sessionCaptor.capture());
+		assertThat(sessionCaptor.getValue().getCallSid()).isEqualTo("CA_NEW");
+		assertThat(sessionCaptor.getValue().getApplianceType()).isEqualTo(ApplianceSpecialty.WASHER);
+		assertThat(sessionCaptor.getValue().getSymptoms()).isEqualTo("Washer is leaking");
+		assertThat(sessionCaptor.getValue().getZipCode()).isEqualTo("60601");
+		assertThat(sessionCaptor.getValue().getCurrentStage()).isEqualTo(ConversationStage.RESUME_INCOMPLETE_SESSION);
+	}
+
+	@Test
+	void respondToCallerContinuesIncompleteSessionWhenRequested() {
+		CallSession session = new CallSession("CA_NEW");
+		session.setApplianceType(ApplianceSpecialty.WASHER);
+		session.setSymptoms("Washer is leaking");
+		session.setZipCode("60601");
+		session.setCurrentStage(ConversationStage.RESUME_INCOMPLETE_SESSION);
+		when(callSessionRepository.findByCallSid("CA_NEW")).thenReturn(Optional.of(session));
+		when(callSessionRepository.save(any(CallSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		String twiml = voiceWebhookService.respondToCaller("CA_NEW", "+17735550101", "continue");
+
+		assertThat(session.getCurrentStage()).isEqualTo(ConversationStage.ERROR_CODES);
+		assertThat(twiml).contains("Let&apos;s continue");
+		assertThat(twiml).contains("Do you see any error codes");
+	}
+
+	@Test
+	void respondToCallerStartsOverFromIncompleteSessionWhenRequested() {
+		CallSession session = new CallSession("CA_NEW");
+		session.setApplianceType(ApplianceSpecialty.WASHER);
+		session.setSymptoms("Washer is leaking");
+		session.setZipCode("60601");
+		session.setCurrentStage(ConversationStage.RESUME_INCOMPLETE_SESSION);
+		when(callSessionRepository.findByCallSid("CA_NEW")).thenReturn(Optional.of(session));
+		when(callSessionRepository.save(any(CallSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		String twiml = voiceWebhookService.respondToCaller("CA_NEW", "+17735550101", "new issue");
+
+		assertThat(session.getApplianceType()).isNull();
+		assertThat(session.getSymptoms()).isNull();
+		assertThat(session.getZipCode()).isNull();
+		assertThat(session.getCurrentStage()).isEqualTo(ConversationStage.APPLIANCE_TYPE);
+		assertThat(twiml).contains("What appliance needs service?");
 	}
 
 	@Test

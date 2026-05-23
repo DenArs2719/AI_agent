@@ -20,7 +20,8 @@ import lombok.Setter;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Entity
 @Table(name = "call_sessions", indexes = {
-		@Index(name = "idx_call_sessions_call_sid", columnList = "call_sid", unique = true)
+		@Index(name = "idx_call_sessions_call_sid", columnList = "call_sid", unique = true),
+		@Index(name = "idx_call_sessions_phone_open", columnList = "caller_phone_number, appointment_id, current_stage, id")
 })
 public class CallSession {
 

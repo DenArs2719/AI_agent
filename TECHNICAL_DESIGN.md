@@ -73,6 +73,8 @@ The backend uses a state machine to decide the next required field. This prevent
 
 For returning callers, a new Twilio call still creates a new `CallSession` because the new call has a new `CallSid`. After storing the caller phone number, the app looks for the latest non-canceled appointment for that phone number. If found, it links the appointment id to the new session and asks whether the caller is calling about the existing appointment or a new appliance issue.
 
+If the caller previously abandoned the call before an appointment was created, the app looks for the latest unfinished `CallSession` from that phone number. It copies the already captured diagnostic fields into the new session and asks whether the caller wants to continue the previous request or start a new issue.
+
 Conversation stages include:
 
 ```text
@@ -84,6 +86,7 @@ ZIP_CODE
 CUSTOMER_NAME
 AVAILABILITY
 READY_TO_SCHEDULE
+RESUME_INCOMPLETE_SESSION
 RETURNING_CALLER
 SLOT_CONFIRMATION
 APPOINTMENT_CONFIRMED
@@ -131,6 +134,9 @@ Indexes support the main lookup paths:
 - technician specialty
 - availability slot booked flag and time range
 - technician join columns
+- customer phone number
+- appointment status and scheduled time
+- call-session phone number, appointment id, current stage, and id for resume lookup
 
 This is more scalable than scanning all technicians in application memory and better reflects how the design would behave with a larger technician dataset.
 
