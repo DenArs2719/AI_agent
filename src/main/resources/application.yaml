@@ -2,19 +2,19 @@ spring:
   application:
     name: demo
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/shs_voice_ai}
-    username: ${SPRING_DATASOURCE_USERNAME:shs_user}
-    password: ${SPRING_DATASOURCE_PASSWORD:shs_password}
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: org.postgresql.Driver
   jpa:
     open-in-view: false
     hibernate:
       ddl-auto: update
   mail:
-    host: ${MAIL_HOST:smtp.example.com}
+    host: ${MAIL_HOST}
     port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:replace-me}
-    password: ${MAIL_PASSWORD:replace-me}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
     properties:
       mail:
         smtp:
@@ -24,10 +24,10 @@ spring:
 
 app:
   twilio:
-    account-sid: ${TWILIO_ACCOUNT_SID:replace-me}
-    auth-token: ${TWILIO_AUTH_TOKEN:replace-me}
-    phone-number: ${TWILIO_PHONE_NUMBER:replace-me}
+    account-sid: ${TWILIO_ACCOUNT_SID}
+    auth-token: ${TWILIO_AUTH_TOKEN}
+    phone-number: ${TWILIO_PHONE_NUMBER}
   ai:
-    api-key: ${AI_API_KEY:replace-me}
+    api-key: ${AI_API_KEY}
   email:
-    from: ${MAIL_FROM:noreply@example.com}
+    from: ${MAIL_FROM}

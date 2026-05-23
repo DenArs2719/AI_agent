@@ -7,6 +7,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -17,14 +18,16 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Entity
-@Table(name = "call_sessions")
+@Table(name = "call_sessions", indexes = {
+		@Index(name = "idx_call_sessions_call_sid", columnList = "call_sid", unique = true)
+})
 public class CallSession {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
-	@Column(nullable = false, unique = true)
+	@Column(name = "call_sid", nullable = false)
 	private String callSid;
 
 	@Enumerated(EnumType.STRING)
