@@ -28,8 +28,7 @@ app:
     auth-token: ${TWILIO_AUTH_TOKEN}
     phone-number: ${TWILIO_PHONE_NUMBER}
   ai:
-    provider: ${AI_PROVIDER}
     api-key: ${AI_API_KEY}
-    model: ${AI_MODEL}
+    model: ${AI_MODEL:gpt-4o-mini}
   email:
     from: ${MAIL_FROM}

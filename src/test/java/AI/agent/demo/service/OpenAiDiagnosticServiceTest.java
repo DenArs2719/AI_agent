@@ -6,6 +6,7 @@ import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import AI.agent.demo.dto.ai.AiDialogueResult;
@@ -17,6 +18,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
 
@@ -26,7 +28,8 @@ class OpenAiDiagnosticServiceTest {
 	void nextTurnCallsOpenAiAndMapsStructuredUpdates() {
 		RestClient.Builder restClientBuilder = RestClient.builder();
 		MockRestServiceServer mockServer = MockRestServiceServer.bindTo(restClientBuilder).build();
-		OpenAiDiagnosticService openAiDiagnosticService = new OpenAiDiagnosticService(restClientBuilder, new ObjectMapper());
+		OpenAiDiagnosticService openAiDiagnosticService =
+				new OpenAiDiagnosticService(restClientBuilder, new ObjectMapper());
 		ReflectionTestUtils.setField(openAiDiagnosticService, "apiKey", "test-api-key");
 		ReflectionTestUtils.setField(openAiDiagnosticService, "model", "gpt-4o-mini");
 		CallSession session = new CallSession("CA123");
@@ -60,5 +63,23 @@ class OpenAiDiagnosticServiceTest {
 		assertThatThrownBy(() -> openAiDiagnosticService.nextTurn(session, "My washer is noisy"))
 				.isInstanceOf(IllegalStateException.class)
 				.hasMessageContaining("api-key");
+	}
+
+	@Test
+	void nextTurnSurfacesOpenAiErrors() {
+		RestClient.Builder restClientBuilder = RestClient.builder();
+		MockRestServiceServer mockServer = MockRestServiceServer.bindTo(restClientBuilder).build();
+		OpenAiDiagnosticService openAiDiagnosticService =
+				new OpenAiDiagnosticService(restClientBuilder, new ObjectMapper());
+		ReflectionTestUtils.setField(openAiDiagnosticService, "apiKey", "test-api-key");
+		ReflectionTestUtils.setField(openAiDiagnosticService, "model", "gpt-4o-mini");
+		CallSession session = new CallSession("CA123");
+		session.setCurrentStage(ConversationStage.APPLIANCE_TYPE);
+		mockServer.expect(once(), requestTo("https://api.openai.com/v1/responses"))
+				.andRespond(withBadRequest().body("{\"error\":{\"message\":\"bad request\"}}"));
+
+		assertThatThrownBy(() -> openAiDiagnosticService.nextTurn(session, "My refrigerator is leaking in 60601"))
+				.isInstanceOf(HttpClientErrorException.BadRequest.class);
+		mockServer.verify();
 	}
 }

@@ -9,20 +9,23 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+@Slf4j
 @Service
+@Primary
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "app.ai.provider", havingValue = "openai")
 public class OpenAiDiagnosticService implements AiDiagnosticService {
 
 	private static final String OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
@@ -41,24 +44,45 @@ public class OpenAiDiagnosticService implements AiDiagnosticService {
 		if (!StringUtils.hasText(apiKey)) {
 			throw new IllegalStateException("OpenAI provider is enabled, but app.ai.api-key is not configured.");
 		}
-		String responseBody = restClientBuilder
-				.build()
-				.post()
-				.uri(OPENAI_RESPONSES_URL)
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
-				.contentType(MediaType.APPLICATION_JSON)
-				.body(requestBody(session, callerSpeech))
-				.retrieve()
-				.body(String.class);
-		return toDialogueResult(responseBody);
+		try {
+			String responseBody = restClientBuilder
+					.build()
+					.post()
+					.uri(OPENAI_RESPONSES_URL)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+					.contentType(MediaType.APPLICATION_JSON)
+					.body(requestBody(session, callerSpeech))
+					.retrieve()
+					.body(String.class);
+			return toDialogueResult(responseBody);
+		}
+		catch (RestClientResponseException exception) {
+			log.warn("OpenAI dialogue call failed with status {} and response body: {}",
+					exception.getStatusCode(),
+					exception.getResponseBodyAsString());
+			throw exception;
+		}
+		catch (RuntimeException exception) {
+			log.warn("OpenAI dialogue call failed.", exception);
+			throw exception;
+		}
 	}
 
 	private Map<String, Object> requestBody(CallSession session, String callerSpeech) {
 		return Map.of(
 				"model", model,
 				"instructions", systemInstructions(),
-				"input", userInput(session, callerSpeech),
+				"input", userInputJson(session, callerSpeech),
 				"text", Map.of("format", responseFormat()));
+	}
+
+	private String userInputJson(CallSession session, String callerSpeech) {
+		try {
+			return objectMapper.writeValueAsString(userInput(session, callerSpeech));
+		}
+		catch (JacksonException exception) {
+			throw new IllegalStateException("Could not serialize dialogue input for OpenAI.", exception);
+		}
 	}
 
 	private String systemInstructions() {
