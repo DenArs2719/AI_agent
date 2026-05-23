@@ -85,7 +85,8 @@ public class OpenAiDiagnosticService implements AiDiagnosticService {
 		}
 	}
 
-	return """
+	private String systemInstructions() {
+		return """
 		You are a Sears Home Services voice diagnostic assistant.
 		Your job is to extract structured fields from each caller response and ask for the next missing field.
 
@@ -112,6 +113,7 @@ public class OpenAiDiagnosticService implements AiDiagnosticService {
 		Do not make scheduling decisions, choose technicians, create appointments, or promise appointment availability.
 		Return only the structured JSON requested by the schema.
 		""";
+	}
 
 	private Map<String, Object> userInput(CallSession session, String callerSpeech) {
 		Map<String, Object> knownSessionState = new LinkedHashMap<>();
