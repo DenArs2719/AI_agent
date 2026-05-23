@@ -40,6 +40,9 @@ class VoiceWebhookServiceTest {
 	@Mock
 	private AppointmentService appointmentService;
 
+	@Mock
+	private TroubleshootingScriptService troubleshootingScriptService;
+
 	@InjectMocks
 	private VoiceWebhookService voiceWebhookService;
 
@@ -126,6 +129,34 @@ class VoiceWebhookServiceTest {
 		assertThat(session.getPriorTroubleshootingSteps()).isEqualTo("I checked the power and restarted it");
 		assertThat(session.getCurrentStage()).isEqualTo(ConversationStage.ZIP_CODE);
 		assertThat(twiml).contains("What ZIP code is the appliance located in?");
+	}
+
+	@Test
+	void respondToCallerWalksCallerThroughSafeTroubleshootingChecks() {
+		CallSession session = new CallSession("CA123");
+		session.setApplianceType(ApplianceSpecialty.REFRIGERATOR);
+		session.setSymptoms("Refrigerator is leaking");
+		session.setCurrentStage(ConversationStage.ERROR_CODES);
+		when(callSessionRepository.findByCallSid("CA123")).thenReturn(Optional.of(session));
+		when(aiDiagnosticService.nextTurn(session, "No error code"))
+				.thenReturn(new AiDialogueResult("Troubleshooting question from AI",
+						new CallSessionUpdates(null, null, "No error code", null, null, null, null)));
+		when(troubleshootingScriptService.getScript(ApplianceSpecialty.REFRIGERATOR))
+				.thenReturn(new AI.agent.demo.dto.TroubleshootingScript(
+						ApplianceSpecialty.REFRIGERATOR,
+						"Refrigerator basic checks",
+						List.of(
+								"Confirm the refrigerator is plugged in.",
+								"Make sure refrigerator and freezer doors are fully closed.",
+								"Confirm vents inside the refrigerator are not blocked.")));
+		when(callSessionRepository.save(any(CallSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		String twiml = voiceWebhookService.respondToCaller("CA123", null, "No error code");
+
+		assertThat(session.getCurrentStage()).isEqualTo(ConversationStage.TROUBLESHOOTING_STEPS);
+		assertThat(twiml).contains("Please try these safe checks");
+		assertThat(twiml).contains("Confirm the refrigerator is plugged in.");
+		assertThat(twiml).contains("After that, tell me what you tried");
 	}
 
 	@Test

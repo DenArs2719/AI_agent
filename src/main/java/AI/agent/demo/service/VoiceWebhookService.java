@@ -5,6 +5,7 @@ import AI.agent.demo.dto.ai.CallSessionUpdates;
 import AI.agent.demo.dto.AppointmentResponse;
 import AI.agent.demo.dto.CreateAppointmentRequest;
 import AI.agent.demo.dto.SchedulingMatchResponse;
+import AI.agent.demo.dto.TroubleshootingScript;
 import AI.agent.demo.model.CallSession;
 import AI.agent.demo.model.ConversationStage;
 import AI.agent.demo.repository.CallSessionRepository;
@@ -27,6 +28,7 @@ public class VoiceWebhookService {
 	private final AiDiagnosticService aiDiagnosticService;
 	private final SchedulingService schedulingService;
 	private final AppointmentService appointmentService;
+	private final TroubleshootingScriptService troubleshootingScriptService;
 
 	@Transactional
 	public String incomingCallInstructions(String callSid, String callerPhoneNumber) {
@@ -38,7 +40,7 @@ public class VoiceWebhookService {
 				"/voice/respond",
 				"speech",
 				"auto",
-				"Thanks for calling Sears Home Services. " + questionFor(session.getCurrentStage())));
+				"Thanks for calling Sears Home Services. " + questionFor(session)));
 	}
 
 	@Transactional
@@ -50,7 +52,7 @@ public class VoiceWebhookService {
 					"/voice/respond",
 					"speech",
 					"auto",
-					"I did not catch that. " + questionFor(session.getCurrentStage())));
+					"I did not catch that. " + questionFor(session)));
 		}
 		if (session.getCurrentStage() == ConversationStage.SLOT_CONFIRMATION) {
 			return handleSlotConfirmation(session, speechResult.trim());
@@ -66,7 +68,7 @@ public class VoiceWebhookService {
 				"/voice/respond",
 				"speech",
 				"auto",
-				questionFor(session.getCurrentStage())));
+				questionFor(session)));
 	}
 
 	private CallSession getOrCreateSession(String callSid) {
@@ -286,12 +288,12 @@ public class VoiceWebhookService {
 		return ConversationStage.READY_TO_SCHEDULE;
 	}
 
-	private String questionFor(ConversationStage stage) {
-		return switch (stage) {
+	private String questionFor(CallSession session) {
+		return switch (session.getCurrentStage()) {
 			case APPLIANCE_TYPE -> "What appliance needs service?";
 			case SYMPTOMS -> "What symptoms are you seeing?";
 			case ERROR_CODES -> "Do you see any error codes on the appliance? If not, say no error code.";
-			case TROUBLESHOOTING_STEPS -> "What troubleshooting steps have you already tried?";
+			case TROUBLESHOOTING_STEPS -> troubleshootingQuestionFor(session);
 			case ZIP_CODE -> "What ZIP code is the appliance located in?";
 			case CUSTOMER_NAME -> "What is your name?";
 			case AVAILABILITY -> "What day and time works best for the appointment?";
@@ -299,6 +301,13 @@ public class VoiceWebhookService {
 			case SLOT_CONFIRMATION -> "Would you like to confirm the proposed appointment?";
 			case APPOINTMENT_CONFIRMED -> "Your appointment is confirmed.";
 		};
+	}
+
+	private String troubleshootingQuestionFor(CallSession session) {
+		TroubleshootingScript script = troubleshootingScriptService.getScript(session.getApplianceType());
+		return "Please try these safe checks if you have not already: "
+				+ String.join(" ", script.safeChecks().stream().limit(3).toList())
+				+ " After that, tell me what you tried and whether the issue is still happening.";
 	}
 
 	private record AvailabilityWindow(LocalDateTime start, LocalDateTime end) {
