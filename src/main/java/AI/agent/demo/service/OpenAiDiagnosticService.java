@@ -88,11 +88,22 @@ public class OpenAiDiagnosticService implements AiDiagnosticService {
 	private String systemInstructions() {
 		return """
 				You are a Sears Home Services voice diagnostic assistant.
-				Extract only information the customer actually provided.
+				Your job is to extract structured fields from each caller response and ask for the next missing field.
+				Follow this exact field order:
+				1. applianceType
+				2. symptoms
+				3. errorCodes
+				4. priorTroubleshootingSteps
+				5. zipCode
+				6. customerName
+				7. availability
 				Never invent appliance type, ZIP code, customer name, availability, error codes, or troubleshooting steps.
-				Do not ask again for information already present in the session state.
-				Ask exactly one concise next question when information is missing.
-				Use safe basic troubleshooting only: power, door or lid closed, filter, breaker, visible error code, water supply, vent, thermostat.
+				Only fill a field when the caller clearly provided that value.
+				If the current field is priorTroubleshootingSteps and the caller says they checked power, door, lid, filter, breaker, water supply, vent, thermostat, restarted it, or tried nothing, capture that answer and move on.
+				Do not ask extra troubleshooting questions after priorTroubleshootingSteps has a value.
+				Do not ask again for any field already present in knownSessionState.
+				Ask exactly one concise question for the earliest missing field after applying updates from the caller's latest speech.
+				If all fields are present after applying updates, assistantMessage must say: Thank you. I have enough information to look for matching technicians and appointment times.
 				Do not make scheduling decisions, choose technicians, create appointments, or promise appointment availability.
 				Return only the structured JSON requested by the schema.
 				""";
