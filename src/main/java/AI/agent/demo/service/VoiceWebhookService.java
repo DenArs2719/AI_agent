@@ -66,7 +66,7 @@ public class VoiceWebhookService {
 				"/voice/respond",
 				"speech",
 				"auto",
-				"Thanks, " + aiDialogueResult.assistantMessage()));
+				questionFor(session.getCurrentStage())));
 	}
 
 	private CallSession getOrCreateSession(String callSid) {
@@ -182,11 +182,37 @@ public class VoiceWebhookService {
 		if (normalizedAvailability.contains("after tomorrow")) {
 			targetDate = today.plusDays(2);
 		}
-		LocalTime startTime = normalizedAvailability.contains("afternoon") ? LocalTime.of(12, 0) : LocalTime.of(8, 0);
-		LocalTime endTime = normalizedAvailability.contains("morning") ? LocalTime.of(12, 0) : LocalTime.of(18, 0);
+		LocalTime startTime = startTimeForAvailability(normalizedAvailability);
+		LocalTime endTime = endTimeForAvailability(normalizedAvailability);
 		return new AvailabilityWindow(
 				LocalDateTime.of(targetDate, startTime),
-				LocalDateTime.of(targetDate.plusDays(5), endTime));
+				LocalDateTime.of(targetDate, endTime));
+	}
+
+	private LocalTime startTimeForAvailability(String normalizedAvailability) {
+		if (normalizedAvailability.contains("morning")) {
+			return LocalTime.of(8, 0);
+		}
+		if (normalizedAvailability.contains("afternoon")) {
+			return LocalTime.of(12, 0);
+		}
+		if (normalizedAvailability.contains("evening")) {
+			return LocalTime.of(17, 0);
+		}
+		return LocalTime.of(8, 0);
+	}
+
+	private LocalTime endTimeForAvailability(String normalizedAvailability) {
+		if (normalizedAvailability.contains("morning")) {
+			return LocalTime.of(12, 0);
+		}
+		if (normalizedAvailability.contains("afternoon")) {
+			return LocalTime.of(17, 0);
+		}
+		if (normalizedAvailability.contains("evening")) {
+			return LocalTime.of(21, 0);
+		}
+		return LocalTime.of(18, 0);
 	}
 
 	private boolean isPositiveConfirmation(String speech) {

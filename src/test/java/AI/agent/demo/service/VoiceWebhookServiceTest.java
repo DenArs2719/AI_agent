@@ -2,6 +2,7 @@ package AI.agent.demo.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -157,6 +158,27 @@ class VoiceWebhookServiceTest {
 	}
 
 	@Test
+	void respondToCallerUsesRequestedEveningWindowForScheduling() {
+		CallSession session = readyForSchedulingSession();
+		when(callSessionRepository.findByCallSid("CA123")).thenReturn(Optional.of(session));
+		when(aiDiagnosticService.nextTurn(session, "Tomorrow evening"))
+				.thenReturn(new AiDialogueResult(
+						"Thank you. I have enough information to look for matching technicians and appointment times.",
+						new CallSessionUpdates(null, null, null, null, null, null, "Tomorrow evening")));
+		when(schedulingService.findMatches(any(), any(), any(), any()))
+				.thenReturn(List.of(match()));
+		when(callSessionRepository.save(any(CallSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		voiceWebhookService.respondToCaller("CA123", null, "Tomorrow evening");
+
+		verify(schedulingService).findMatches(
+				eq("60601"),
+				eq(ApplianceSpecialty.DRYER),
+				eq(LocalDateTime.of(LocalDateTime.now().toLocalDate().plusDays(1), java.time.LocalTime.of(17, 0))),
+				eq(LocalDateTime.of(LocalDateTime.now().toLocalDate().plusDays(1), java.time.LocalTime.of(21, 0))));
+	}
+
+	@Test
 	void respondToCallerCreatesAndConfirmsAppointmentWhenCallerAcceptsProposedSlot() {
 		CallSession session = new CallSession("CA123");
 		session.setApplianceType(ApplianceSpecialty.DRYER);
@@ -196,6 +218,18 @@ class VoiceWebhookServiceTest {
 						101L,
 						LocalDateTime.of(2026, 5, 24, 9, 0),
 						LocalDateTime.of(2026, 5, 24, 11, 0))));
+	}
+
+	private CallSession readyForSchedulingSession() {
+		CallSession session = new CallSession("CA123");
+		session.setApplianceType(ApplianceSpecialty.DRYER);
+		session.setSymptoms("Dryer has no heat");
+		session.setErrorCodes("No error code");
+		session.setPriorTroubleshootingSteps("Cleaned the lint filter");
+		session.setZipCode("60601");
+		session.setCustomerName("Jane Smith");
+		session.setCurrentStage(ConversationStage.AVAILABILITY);
+		return session;
 	}
 
 	private AppointmentResponse appointmentResponse(AppointmentStatus status) {
