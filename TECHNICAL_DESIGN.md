@@ -71,6 +71,8 @@ Each call is represented by a `call_sessions` row keyed by Twilio `CallSid`. The
 
 The backend uses a state machine to decide the next required field. This prevents repeated questions and prevents the LLM from skipping required data.
 
+For returning callers, a new Twilio call still creates a new `CallSession` because the new call has a new `CallSid`. After storing the caller phone number, the app looks for the latest non-canceled appointment for that phone number. If found, it links the appointment id to the new session and asks whether the caller is calling about the existing appointment or a new appliance issue.
+
 Conversation stages include:
 
 ```text
@@ -82,6 +84,7 @@ ZIP_CODE
 CUSTOMER_NAME
 AVAILABILITY
 READY_TO_SCHEDULE
+RETURNING_CALLER
 SLOT_CONFIRMATION
 APPOINTMENT_CONFIRMED
 FAILED

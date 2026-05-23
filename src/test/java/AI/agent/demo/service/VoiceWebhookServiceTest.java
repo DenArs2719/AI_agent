@@ -5,16 +5,20 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 
 import AI.agent.demo.dto.AppointmentResponse;
 import AI.agent.demo.dto.CreateAppointmentRequest;
 import AI.agent.demo.dto.SchedulingMatchResponse;
 import AI.agent.demo.dto.ai.AiDialogueResult;
 import AI.agent.demo.dto.ai.CallSessionUpdates;
+import AI.agent.demo.model.Appointment;
 import AI.agent.demo.model.AppointmentStatus;
 import AI.agent.demo.model.ApplianceSpecialty;
 import AI.agent.demo.model.CallSession;
 import AI.agent.demo.model.ConversationStage;
+import AI.agent.demo.model.Customer;
+import AI.agent.demo.repository.AppointmentRepository;
 import AI.agent.demo.repository.CallSessionRepository;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -43,6 +47,9 @@ class VoiceWebhookServiceTest {
 	@Mock
 	private TroubleshootingScriptService troubleshootingScriptService;
 
+	@Mock
+	private AppointmentRepository appointmentRepository;
+
 	@InjectMocks
 	private VoiceWebhookService voiceWebhookService;
 
@@ -62,6 +69,74 @@ class VoiceWebhookServiceTest {
 		assertThat(sessionCaptor.getValue().getCallSid()).isEqualTo("CA123");
 		assertThat(sessionCaptor.getValue().getCallerPhoneNumber()).isEqualTo("+17735550101");
 		assertThat(sessionCaptor.getValue().getCurrentStage()).isEqualTo(ConversationStage.APPLIANCE_TYPE);
+	}
+
+	@Test
+	void incomingCallInstructionsLinksExistingAppointmentForReturningCaller() {
+		Appointment appointment = mock(Appointment.class);
+		Customer customer = mock(Customer.class);
+		when(callSessionRepository.findByCallSid("CA_RETURN")).thenReturn(Optional.empty());
+		when(appointmentRepository.findFirstByCustomerPhoneNumberAndStatusNotOrderByScheduledAtDesc(
+				"+17735550101",
+				AppointmentStatus.CANCELED))
+				.thenReturn(Optional.of(appointment));
+		when(appointment.getId()).thenReturn(501L);
+		when(appointment.getCustomer()).thenReturn(customer);
+		when(appointment.getApplianceSpecialty()).thenReturn(ApplianceSpecialty.REFRIGERATOR);
+		when(customer.getFirstName()).thenReturn("Jane");
+		when(customer.getLastName()).thenReturn("Smith");
+		when(customer.getZipCode()).thenReturn("60601");
+		when(callSessionRepository.save(any(CallSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		String twiml = voiceWebhookService.incomingCallInstructions("CA_RETURN", "+17735550101");
+
+		assertThat(twiml).contains("I found an existing appointment for this phone number");
+		ArgumentCaptor<CallSession> sessionCaptor = ArgumentCaptor.forClass(CallSession.class);
+		verify(callSessionRepository).save(sessionCaptor.capture());
+		assertThat(sessionCaptor.getValue().getAppointmentId()).isEqualTo(501L);
+		assertThat(sessionCaptor.getValue().getCustomerName()).isEqualTo("Jane Smith");
+		assertThat(sessionCaptor.getValue().getApplianceType()).isEqualTo(ApplianceSpecialty.REFRIGERATOR);
+		assertThat(sessionCaptor.getValue().getZipCode()).isEqualTo("60601");
+		assertThat(sessionCaptor.getValue().getCurrentStage()).isEqualTo(ConversationStage.RETURNING_CALLER);
+	}
+
+	@Test
+	void respondToCallerStartsNewIssueForReturningCallerWhenRequested() {
+		CallSession session = new CallSession("CA_RETURN");
+		session.setAppointmentId(501L);
+		session.setCallerPhoneNumber("+17735550101");
+		session.setCustomerName("Jane Smith");
+		session.setApplianceType(ApplianceSpecialty.REFRIGERATOR);
+		session.setZipCode("60601");
+		session.setCurrentStage(ConversationStage.RETURNING_CALLER);
+		when(callSessionRepository.findByCallSid("CA_RETURN")).thenReturn(Optional.of(session));
+		when(callSessionRepository.save(any(CallSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		String twiml = voiceWebhookService.respondToCaller("CA_RETURN", "+17735550101", "new issue");
+
+		assertThat(session.getAppointmentId()).isNull();
+		assertThat(session.getCustomerName()).isNull();
+		assertThat(session.getApplianceType()).isNull();
+		assertThat(session.getZipCode()).isNull();
+		assertThat(session.getCurrentStage()).isEqualTo(ConversationStage.APPLIANCE_TYPE);
+		assertThat(twiml).contains("No problem");
+		assertThat(twiml).contains("What appliance needs service?");
+	}
+
+	@Test
+	void respondToCallerAcknowledgesExistingAppointmentForReturningCaller() {
+		CallSession session = new CallSession("CA_RETURN");
+		session.setAppointmentId(501L);
+		session.setCurrentStage(ConversationStage.RETURNING_CALLER);
+		when(callSessionRepository.findByCallSid("CA_RETURN")).thenReturn(Optional.of(session));
+		when(callSessionRepository.save(any(CallSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		String twiml = voiceWebhookService.respondToCaller("CA_RETURN", null, "existing appointment");
+
+		assertThat(session.getAppointmentId()).isEqualTo(501L);
+		assertThat(session.getCurrentStage()).isEqualTo(ConversationStage.APPOINTMENT_CONFIRMED);
+		assertThat(twiml).contains("I found your existing appointment");
+		assertThat(twiml).doesNotContain("<Gather");
 	}
 
 	@Test

@@ -63,7 +63,7 @@ The voice flow is intentionally split between AI extraction and deterministic ba
    - Waits for verbal confirmation.
    - Creates and confirms the appointment.
 
-Each Twilio call has its own `CallSid`, and the application uses that value as the unique key for a `CallSession`. If the same customer calls again later, Twilio sends a new `CallSid`, so the app creates a new `CallSession` even when the caller phone number is the same. The previous appointment remains stored in `appointments`; future follow-up or rescheduling logic could use `caller_phone_number` to find an existing customer or recent appointment.
+Each Twilio call has its own `CallSid`, and the application uses that value as the unique key for a `CallSession`. If the same customer calls again later, Twilio sends a new `CallSid`, so the app creates a new `CallSession` even when the caller phone number is the same. On a new call, the app also checks `caller_phone_number` for the latest non-canceled appointment. If one exists, the session moves to `RETURNING_CALLER` and asks whether the caller is calling about the existing appointment or a new appliance issue.
 
 ### Conversation Stages
 
@@ -78,6 +78,7 @@ ZIP_CODE
 CUSTOMER_NAME
 AVAILABILITY
 READY_TO_SCHEDULE
+RETURNING_CALLER
 SLOT_CONFIRMATION
 APPOINTMENT_CONFIRMED
 FAILED

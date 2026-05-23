@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -15,7 +16,9 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Entity
-@Table(name = "customers")
+@Table(name = "customers", indexes = {
+		@Index(name = "idx_customers_phone_number", columnList = "phone_number")
+})
 public class Customer {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)

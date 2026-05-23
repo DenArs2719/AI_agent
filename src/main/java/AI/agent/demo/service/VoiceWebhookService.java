@@ -6,8 +6,11 @@ import AI.agent.demo.dto.AppointmentResponse;
 import AI.agent.demo.dto.CreateAppointmentRequest;
 import AI.agent.demo.dto.SchedulingMatchResponse;
 import AI.agent.demo.dto.TroubleshootingScript;
+import AI.agent.demo.model.Appointment;
+import AI.agent.demo.model.AppointmentStatus;
 import AI.agent.demo.model.CallSession;
 import AI.agent.demo.model.ConversationStage;
+import AI.agent.demo.repository.AppointmentRepository;
 import AI.agent.demo.repository.CallSessionRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -31,11 +34,20 @@ public class VoiceWebhookService {
 	private final SchedulingService schedulingService;
 	private final AppointmentService appointmentService;
 	private final TroubleshootingScriptService troubleshootingScriptService;
+	private final AppointmentRepository appointmentRepository;
 
 	@Transactional
 	public String incomingCallInstructions(String callSid, String callerPhoneNumber) {
 		CallSession session = getOrCreateSession(callSid);
 		captureCallerPhoneNumber(session, callerPhoneNumber);
+		if (isNewSession(session) && linkExistingAppointment(session)) {
+			callSessionRepository.save(session);
+			return response(gather(
+					"/voice/respond",
+					"speech",
+					"auto",
+					"Thanks for calling Sears Home Services. " + questionFor(session)));
+		}
 		session.setCurrentStage(nextMissingStage(session));
 		callSessionRepository.save(session);
 		return response(gather(
@@ -58,6 +70,9 @@ public class VoiceWebhookService {
 		}
 		if (session.getCurrentStage() == ConversationStage.SLOT_CONFIRMATION) {
 			return handleSlotConfirmation(session, speechResult.trim());
+		}
+		if (session.getCurrentStage() == ConversationStage.RETURNING_CALLER) {
+			return handleReturningCaller(session, speechResult.trim());
 		}
 		AiDialogueResult aiDialogueResult;
 		try {
@@ -106,6 +121,35 @@ public class VoiceWebhookService {
 		if (!StringUtils.hasText(session.getCallerPhoneNumber()) && StringUtils.hasText(callerPhoneNumber)) {
 			session.setCallerPhoneNumber(callerPhoneNumber.trim());
 		}
+	}
+
+	private boolean isNewSession(CallSession session) {
+		return session.getId() == null
+				&& session.getAppointmentId() == null
+				&& session.getCurrentStage() == ConversationStage.APPLIANCE_TYPE;
+	}
+
+	private boolean linkExistingAppointment(CallSession session) {
+		if (!StringUtils.hasText(session.getCallerPhoneNumber())) {
+			return false;
+		}
+		return appointmentRepository
+				.findFirstByCustomerPhoneNumberAndStatusNotOrderByScheduledAtDesc(
+						session.getCallerPhoneNumber(),
+						AppointmentStatus.CANCELED)
+				.map(appointment -> {
+					session.setAppointmentId(appointment.getId());
+					session.setCustomerName(customerNameFor(appointment));
+					session.setApplianceType(appointment.getApplianceSpecialty());
+					session.setZipCode(appointment.getCustomer().getZipCode());
+					session.setCurrentStage(ConversationStage.RETURNING_CALLER);
+					return true;
+				})
+				.orElse(false);
+	}
+
+	private String customerNameFor(Appointment appointment) {
+		return appointment.getCustomer().getFirstName() + " " + appointment.getCustomer().getLastName();
 	}
 
 	private String proposeAppointmentSlot(CallSession session) {
@@ -166,6 +210,43 @@ public class VoiceWebhookService {
 		callSessionRepository.save(session);
 		return response(say("Your appointment is confirmed with " + confirmedAppointment.technicianName()
 				+ " at " + confirmedAppointment.scheduledAt() + ". Thank you for calling Sears Home Services."));
+	}
+
+	private String handleReturningCaller(CallSession session, String speech) {
+		if (isNewIssueIntent(speech)) {
+			startNewIssue(session);
+			callSessionRepository.save(session);
+			return response(gather(
+					"/voice/respond",
+					"speech",
+					"auto",
+					"No problem. " + questionFor(session)));
+		}
+		if (isExistingAppointmentIntent(speech)) {
+			session.setCurrentStage(ConversationStage.APPOINTMENT_CONFIRMED);
+			callSessionRepository.save(session);
+			return response(say("I found your existing appointment.The appointment remains confirmed. "
+					+ "Thank you for calling Sears Home Services."));
+		}
+		return response(gather(
+				"/voice/respond",
+				"speech",
+				"auto",
+				"Please say existing appointment if you are calling about that appointment, or new issue to start a new service request."));
+	}
+
+	private void startNewIssue(CallSession session) {
+		session.setAppointmentId(null);
+		session.setApplianceType(null);
+		session.setSymptoms(null);
+		session.setErrorCodes(null);
+		session.setPriorTroubleshootingSteps(null);
+		session.setZipCode(null);
+		session.setCustomerName(null);
+		session.setAvailability(null);
+		session.setProposedSlotId(null);
+		session.setProposedTechnicianName(null);
+		session.setCurrentStage(ConversationStage.APPLIANCE_TYPE);
 	}
 
 	private CreateAppointmentRequest createAppointmentRequest(CallSession session) {
@@ -254,6 +335,22 @@ public class VoiceWebhookService {
 				|| normalizedSpeech.contains("different");
 	}
 
+	private boolean isExistingAppointmentIntent(String speech) {
+		String normalizedSpeech = speech.toLowerCase(Locale.ROOT);
+		return normalizedSpeech.contains("existing")
+				|| normalizedSpeech.contains("appointment")
+				|| normalizedSpeech.contains("same")
+				|| normalizedSpeech.contains("yes");
+	}
+
+	private boolean isNewIssueIntent(String speech) {
+		String normalizedSpeech = speech.toLowerCase(Locale.ROOT);
+		return normalizedSpeech.contains("new")
+				|| normalizedSpeech.contains("different issue")
+				|| normalizedSpeech.contains("another issue")
+				|| normalizedSpeech.contains("new service");
+	}
+
 	private void applyUpdates(CallSession session, CallSessionUpdates updates) {
 		if (session.getApplianceType() == null && updates.applianceType() != null) {
 			session.setApplianceType(updates.applianceType());
@@ -328,6 +425,7 @@ public class VoiceWebhookService {
 			case CUSTOMER_NAME -> "What is your name?";
 			case AVAILABILITY -> "What day and time works best for the appointment?";
 			case READY_TO_SCHEDULE -> "I have enough information to look for appointment times.";
+			case RETURNING_CALLER -> "I found an existing appointment for this phone number. Are you calling about that appointment or a new appliance issue?";
 			case SLOT_CONFIRMATION -> "Would you like to confirm the proposed appointment?";
 			case APPOINTMENT_CONFIRMED -> "Your appointment is confirmed.";
 			case FAILED -> "I had trouble with the last response. "
