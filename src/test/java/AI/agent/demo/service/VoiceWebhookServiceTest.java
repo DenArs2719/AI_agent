@@ -5,6 +5,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import AI.agent.demo.dto.ai.AiDialogueResult;
+import AI.agent.demo.dto.ai.CallSessionUpdates;
 import AI.agent.demo.model.ApplianceSpecialty;
 import AI.agent.demo.model.CallSession;
 import AI.agent.demo.model.ConversationStage;
@@ -22,11 +24,14 @@ class VoiceWebhookServiceTest {
 	@Mock
 	private CallSessionRepository callSessionRepository;
 
+	@Mock
+	private AiDiagnosticService aiDiagnosticService;
+
 	@InjectMocks
 	private VoiceWebhookService voiceWebhookService;
 
 	@Test
-	void incomingCallCreatesSessionAndAsksForFirstMissingField() {
+	void incomingCallInstructionsAskForDiagnosticDetailsAndCollectSpeech() {
 		when(callSessionRepository.findByCallSid("CA123")).thenReturn(Optional.empty());
 		when(callSessionRepository.save(any(CallSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -59,6 +64,16 @@ class VoiceWebhookServiceTest {
 		CallSession session = new CallSession("CA123");
 		session.setCurrentStage(ConversationStage.APPLIANCE_TYPE);
 		when(callSessionRepository.findByCallSid("CA123")).thenReturn(Optional.of(session));
+		when(aiDiagnosticService.nextTurn(session, "My refrigerator is leaking in 60601"))
+				.thenReturn(new AiDialogueResult("Do you see any error codes on the appliance?",
+						new CallSessionUpdates(
+								ApplianceSpecialty.REFRIGERATOR,
+								"My refrigerator is leaking in 60601",
+								null,
+								null,
+								"60601",
+								null,
+								null)));
 		when(callSessionRepository.save(any(CallSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
 		String twiml = voiceWebhookService.respondToCaller("CA123", "My refrigerator is leaking in 60601");
@@ -80,6 +95,16 @@ class VoiceWebhookServiceTest {
 		session.setErrorCodes("No error code");
 		session.setCurrentStage(ConversationStage.TROUBLESHOOTING_STEPS);
 		when(callSessionRepository.findByCallSid("CA123")).thenReturn(Optional.of(session));
+		when(aiDiagnosticService.nextTurn(session, "I checked the power and restarted it"))
+				.thenReturn(new AiDialogueResult("What ZIP code is the appliance located in?",
+						new CallSessionUpdates(
+								null,
+								null,
+								null,
+								"I checked the power and restarted it",
+								null,
+								null,
+								null)));
 		when(callSessionRepository.save(any(CallSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
 		String twiml = voiceWebhookService.respondToCaller("CA123", "I checked the power and restarted it");
@@ -100,13 +125,17 @@ class VoiceWebhookServiceTest {
 		session.setCustomerName("Jane Smith");
 		session.setCurrentStage(ConversationStage.AVAILABILITY);
 		when(callSessionRepository.findByCallSid("CA123")).thenReturn(Optional.of(session));
+		when(aiDiagnosticService.nextTurn(session, "Tomorrow morning"))
+				.thenReturn(new AiDialogueResult(
+						"Thank you. I have enough information to look for matching technicians and appointment times.",
+						new CallSessionUpdates(null, null, null, null, null, null, "Tomorrow morning")));
 		when(callSessionRepository.save(any(CallSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
 		String twiml = voiceWebhookService.respondToCaller("CA123", "Tomorrow morning");
 
 		assertThat(session.getAvailability()).isEqualTo("Tomorrow morning");
 		assertThat(session.getCurrentStage()).isEqualTo(ConversationStage.READY_TO_SCHEDULE);
-		assertThat(twiml).contains("I have the appliance, symptoms, ZIP code, your name, and availability");
+		assertThat(twiml).contains("I have enough information to look for matching technicians");
 		assertThat(twiml).doesNotContain("<Gather");
 	}
 }
