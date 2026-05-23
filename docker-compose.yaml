@@ -4,9 +4,9 @@ services:
     container_name: shs-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-shs_voice_ai}
-      POSTGRES_USER: ${POSTGRES_USER:-shs_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shs_password}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
@@ -27,18 +27,18 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://postgres:5432/shs_voice_ai}
-      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-shs_user}
-      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-shs_password}
-      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-replace-me}
-      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-replace-me}
-      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-replace-me}
-      AI_API_KEY: ${AI_API_KEY:-replace-me}
-      MAIL_HOST: ${MAIL_HOST:-smtp.example.com}
-      MAIL_PORT: ${MAIL_PORT:-587}
-      MAIL_USERNAME: ${MAIL_USERNAME:-replace-me}
-      MAIL_PASSWORD: ${MAIL_PASSWORD:-replace-me}
-      MAIL_FROM: ${MAIL_FROM:-noreply@example.com}
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER}
+      AI_API_KEY: ${AI_API_KEY}
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_FROM: ${MAIL_FROM}
 
 volumes:
   postgres_data:
