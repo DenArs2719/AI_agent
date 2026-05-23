@@ -1,0 +1,12 @@
+package AI.agent.demo.model;
+
+public enum ConversationStage {
+	APPLIANCE_TYPE,
+	SYMPTOMS,
+	ERROR_CODES,
+	TROUBLESHOOTING_STEPS,
+	ZIP_CODE,
+	CUSTOMER_NAME,
+	AVAILABILITY,
+	READY_TO_SCHEDULE
+}
