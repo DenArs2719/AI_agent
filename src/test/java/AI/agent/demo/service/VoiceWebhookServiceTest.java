@@ -160,6 +160,28 @@ class VoiceWebhookServiceTest {
 	}
 
 	@Test
+	void respondToCallerRecordsFailureAndReturnsRetryTwiMLWhenDialogueFails() {
+		CallSession session = new CallSession("CA123");
+		session.setApplianceType(ApplianceSpecialty.REFRIGERATOR);
+		session.setCurrentStage(ConversationStage.SYMPTOMS);
+		when(callSessionRepository.findByCallSid("CA123")).thenReturn(Optional.of(session));
+		when(aiDiagnosticService.nextTurn(session, "It is making a loud noise"))
+				.thenThrow(new IllegalStateException("OpenAI timeout"));
+		when(callSessionRepository.save(any(CallSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		String twiml = voiceWebhookService.respondToCaller("CA123", null, "It is making a loud noise");
+
+		assertThat(session.getCurrentStage()).isEqualTo(ConversationStage.FAILED);
+		assertThat(session.getStageBeforeFailure()).isEqualTo(ConversationStage.SYMPTOMS);
+		assertThat(session.getErrorCount()).isEqualTo(1);
+		assertThat(session.getLastErrorMessage()).contains("OpenAI timeout");
+		assertThat(session.getLastErrorAt()).isNotNull();
+		assertThat(twiml).contains("I am sorry, I had trouble processing that answer");
+		assertThat(twiml).contains("What symptoms are you seeing?");
+		assertThat(twiml).contains("<Gather");
+	}
+
+	@Test
 	void respondToCallerProposesSlotWhenAllRequiredFieldsAreCaptured() {
 		CallSession session = new CallSession("CA123");
 		session.setApplianceType(ApplianceSpecialty.DRYER);

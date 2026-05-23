@@ -9,6 +9,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -61,6 +62,16 @@ public class CallSession {
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
 	private ConversationStage currentStage;
+
+	@Enumerated(EnumType.STRING)
+	private ConversationStage stageBeforeFailure;
+
+	@Column(length = 1000)
+	private String lastErrorMessage;
+
+	private LocalDateTime lastErrorAt;
+
+	private int errorCount;
 
 	public CallSession(String callSid) {
 		this.callSid = callSid;

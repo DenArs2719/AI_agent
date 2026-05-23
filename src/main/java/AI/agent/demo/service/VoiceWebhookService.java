@@ -15,10 +15,12 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class VoiceWebhookService {
@@ -57,7 +59,13 @@ public class VoiceWebhookService {
 		if (session.getCurrentStage() == ConversationStage.SLOT_CONFIRMATION) {
 			return handleSlotConfirmation(session, speechResult.trim());
 		}
-		AiDialogueResult aiDialogueResult = aiDiagnosticService.nextTurn(session, speechResult.trim());
+		AiDialogueResult aiDialogueResult;
+		try {
+			aiDialogueResult = aiDiagnosticService.nextTurn(session, speechResult.trim());
+		}
+		catch (RuntimeException exception) {
+			return handleDialogueFailure(session, exception);
+		}
 		applyUpdates(session, aiDialogueResult.updates());
 		session.setCurrentStage(nextMissingStage(session));
 		callSessionRepository.save(session);
@@ -69,6 +77,22 @@ public class VoiceWebhookService {
 				"speech",
 				"auto",
 				questionFor(session)));
+	}
+
+	private String handleDialogueFailure(CallSession session, RuntimeException exception) {
+		log.warn("Voice dialogue failed for callSid={}", session.getCallSid(), exception);
+		ConversationStage failedStage = session.getCurrentStage();
+		session.setStageBeforeFailure(failedStage);
+		session.setCurrentStage(ConversationStage.FAILED);
+		session.setLastErrorMessage(errorMessageFor(exception));
+		session.setLastErrorAt(LocalDateTime.now());
+		session.setErrorCount(session.getErrorCount() + 1);
+		callSessionRepository.save(session);
+		return response(gather(
+				"/voice/respond",
+				"speech",
+				"auto",
+				"I am sorry, I had trouble processing that answer. " + questionFor(failedStage, session)));
 	}
 
 	private CallSession getOrCreateSession(String callSid) {
@@ -282,6 +306,10 @@ public class VoiceWebhookService {
 		if (session.getAppointmentId() != null) {
 			return ConversationStage.APPOINTMENT_CONFIRMED;
 		}
+		if (session.getCurrentStage() == ConversationStage.FAILED
+				&& session.getStageBeforeFailure() != null) {
+			return session.getStageBeforeFailure();
+		}
 		if (session.getProposedSlotId() != null) {
 			return ConversationStage.SLOT_CONFIRMATION;
 		}
@@ -289,7 +317,11 @@ public class VoiceWebhookService {
 	}
 
 	private String questionFor(CallSession session) {
-		return switch (session.getCurrentStage()) {
+		return questionFor(session.getCurrentStage(), session);
+	}
+
+	private String questionFor(ConversationStage stage, CallSession session) {
+		return switch (stage) {
 			case APPLIANCE_TYPE -> "What appliance needs service?";
 			case SYMPTOMS -> "What symptoms are you seeing?";
 			case ERROR_CODES -> "Do you see any error codes on the appliance? If not, say no error code.";
@@ -300,7 +332,20 @@ public class VoiceWebhookService {
 			case READY_TO_SCHEDULE -> "I have enough information to look for appointment times.";
 			case SLOT_CONFIRMATION -> "Would you like to confirm the proposed appointment?";
 			case APPOINTMENT_CONFIRMED -> "Your appointment is confirmed.";
+			case FAILED -> "I had trouble with the last response. "
+					+ questionFor(session.getStageBeforeFailure() == null
+							? ConversationStage.APPLIANCE_TYPE
+							: session.getStageBeforeFailure(), session);
+			case ABANDONED -> "This call session has ended.";
 		};
+	}
+
+	private String errorMessageFor(RuntimeException exception) {
+		String message = exception.getMessage();
+		if (!StringUtils.hasText(message)) {
+			return exception.getClass().getSimpleName();
+		}
+		return message.length() > 1000 ? message.substring(0, 1000) : message;
 	}
 
 	private String troubleshootingQuestionFor(CallSession session) {
