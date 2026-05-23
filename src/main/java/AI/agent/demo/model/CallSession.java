@@ -50,6 +50,14 @@ public class CallSession {
 	@Column(length = 500)
 	private String availability;
 
+	private String callerPhoneNumber;
+
+	private Long proposedSlotId;
+
+	private String proposedTechnicianName;
+
+	private Long appointmentId;
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
 	private ConversationStage currentStage;

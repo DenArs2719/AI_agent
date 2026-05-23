@@ -41,7 +41,7 @@ public class DemoAiDiagnosticService implements AiDiagnosticService {
 			case ZIP_CODE -> zipCode = parseZipCode(speech).orElse(null);
 			case CUSTOMER_NAME -> customerName = speech;
 			case AVAILABILITY -> availability = speech;
-			case READY_TO_SCHEDULE -> {
+			case READY_TO_SCHEDULE, SLOT_CONFIRMATION, APPOINTMENT_CONFIRMED -> {
 			}
 		}
 		if (session.getApplianceType() == null && applianceType == null) {
@@ -99,6 +99,8 @@ public class DemoAiDiagnosticService implements AiDiagnosticService {
 			case CUSTOMER_NAME -> "What is your name?";
 			case AVAILABILITY -> "What day and time works best for the appointment?";
 			case READY_TO_SCHEDULE -> "Thank you. I have enough information to look for matching technicians and appointment times.";
+			case SLOT_CONFIRMATION -> "Please confirm whether you would like to book the proposed appointment.";
+			case APPOINTMENT_CONFIRMED -> "Your appointment is confirmed.";
 		};
 	}
 
