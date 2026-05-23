@@ -10,12 +10,14 @@ import java.util.Comparator;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
 public class SchedulingService {
 	private final TechnicianRepository technicianRepository;
 
+	@Transactional(readOnly = true)
 	public List<SchedulingMatchResponse> findMatches(String customerZipCode,
 													 ApplianceSpecialty applianceType,
 													 LocalDateTime desiredStart,
