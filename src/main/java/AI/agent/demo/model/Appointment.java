@@ -10,6 +10,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -22,7 +23,7 @@ import java.time.LocalDateTime;
 @Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Entity
-@Table(name = "appointment")
+@Table(name = "appointments")
 public class Appointment {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -35,6 +36,10 @@ public class Appointment {
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
 	@JoinColumn(name = "technician_id", nullable = false)
 	private Technician technician;
+
+	@OneToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "availability_slot_id")
+	private AvailabilitySlot availabilitySlot;
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
@@ -58,5 +63,15 @@ public class Appointment {
 		this.scheduledAt = scheduledAt;
 		this.issueDescription = issueDescription;
 		this.status = status;
+	}
+
+	public Appointment(Customer customer, Technician technician, AvailabilitySlot availabilitySlot,
+			ApplianceSpecialty applianceSpecialty, String issueDescription, AppointmentStatus status) {
+		this(customer, technician, applianceSpecialty, availabilitySlot.getStartsAt(), issueDescription, status);
+		this.availabilitySlot = availabilitySlot;
+	}
+
+	public void confirm() {
+		this.status = AppointmentStatus.CONFIRMED;
 	}
 }

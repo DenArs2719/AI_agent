@@ -20,7 +20,7 @@ import java.time.LocalDateTime;
 @Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Entity
-@Table(name = "availability_slot")
+@Table(name = "availability_slots")
 public class AvailabilitySlot {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
