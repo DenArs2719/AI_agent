@@ -6,6 +6,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
@@ -20,7 +21,10 @@ import java.time.LocalDateTime;
 @Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Entity
-@Table(name = "availability_slots")
+@Table(name = "availability_slots", indexes = {
+		@Index(name = "idx_availability_slots_window", columnList = "booked, starts_at, ends_at"),
+		@Index(name = "idx_availability_slots_technician_id", columnList = "technician_id")
+})
 public class AvailabilitySlot {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)

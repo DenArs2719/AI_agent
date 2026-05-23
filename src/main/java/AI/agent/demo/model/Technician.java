@@ -11,6 +11,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
@@ -47,12 +48,24 @@ public class Technician {
 	private String phoneNumber;
 
 	@ElementCollection(fetch = FetchType.EAGER)
-	@CollectionTable(name = "technician_service_areas", joinColumns = @JoinColumn(name = "technician_id"))
+	@CollectionTable(
+			name = "technician_service_areas",
+			joinColumns = @JoinColumn(name = "technician_id"),
+			indexes = {
+					@Index(name = "idx_technician_service_areas_zip_code", columnList = "zip_code"),
+					@Index(name = "idx_technician_service_areas_technician_id", columnList = "technician_id")
+			})
 	@Column(name = "zip_code", nullable = false, length = 10)
 	private Set<String> serviceAreas = new LinkedHashSet<>();
 
 	@ElementCollection(fetch = FetchType.EAGER)
-	@CollectionTable(name = "technician_specialties", joinColumns = @JoinColumn(name = "technician_id"))
+	@CollectionTable(
+			name = "technician_specialties",
+			joinColumns = @JoinColumn(name = "technician_id"),
+			indexes = {
+					@Index(name = "idx_technician_specialties_specialty", columnList = "specialty"),
+					@Index(name = "idx_technician_specialties_technician_id", columnList = "technician_id")
+			})
 	@Enumerated(EnumType.STRING)
 	@Column(name = "specialty", nullable = false)
 	private Set<ApplianceSpecialty> specialties = new LinkedHashSet<>();

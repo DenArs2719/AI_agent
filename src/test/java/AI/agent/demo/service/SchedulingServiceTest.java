@@ -7,7 +7,7 @@ import static org.mockito.Mockito.when;
 import AI.agent.demo.model.ApplianceSpecialty;
 import AI.agent.demo.model.AvailabilitySlot;
 import AI.agent.demo.model.Technician;
-import AI.agent.demo.repository.TechnicianRepository;
+import AI.agent.demo.repository.AvailabilitySlotRepository;
 import AI.agent.demo.dto.SchedulingMatchResponse;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -24,7 +24,7 @@ class SchedulingServiceTest {
 	private static final LocalDateTime WINDOW_END = LocalDateTime.of(2026, 5, 24, 18, 0);
 
 	@Mock
-	private TechnicianRepository technicianRepository;
+	private AvailabilitySlotRepository availabilitySlotRepository;
 
 	@InjectMocks
 	private SchedulingService schedulingService;
@@ -40,7 +40,12 @@ class SchedulingServiceTest {
 		AvailabilitySlot avaSlot = slot(10, 12);
 		ava.addAvailabilitySlot(avaSlot);
 
-		when(technicianRepository.findAll()).thenReturn(List.of(zed, ava));
+		when(availabilitySlotRepository.findMatchingOpenSlots(
+				"60601",
+				ApplianceSpecialty.REFRIGERATOR,
+				WINDOW_START,
+				WINDOW_END))
+				.thenReturn(List.of(lateSlot, earlySlot, avaSlot));
 
 		List<SchedulingMatchResponse> matches = schedulingService.findMatches("60601", ApplianceSpecialty.REFRIGERATOR,
 				WINDOW_START, WINDOW_END);
@@ -53,18 +58,12 @@ class SchedulingServiceTest {
 
 	@Test
 	void findMatchesFiltersOutZipSpecialtyBookedAndOutOfWindowSlots() {
-		Technician wrongZip = technician("Wrong", "Zip", "60602", ApplianceSpecialty.REFRIGERATOR)
-				.addAvailabilitySlot(slot(9, 11));
-		Technician wrongSpecialty = technician("Wrong", "Specialty", "60601", ApplianceSpecialty.DRYER)
-				.addAvailabilitySlot(slot(9, 11));
-		AvailabilitySlot bookedSlot = slot(9, 11);
-		bookedSlot.markBooked();
-		Technician bookedOnly = technician("Booked", "Only", "60601", ApplianceSpecialty.REFRIGERATOR)
-				.addAvailabilitySlot(bookedSlot);
-		Technician outsideWindow = technician("Outside", "Window", "60601", ApplianceSpecialty.REFRIGERATOR)
-				.addAvailabilitySlot(slot(7, 8));
-
-		when(technicianRepository.findAll()).thenReturn(List.of(wrongZip, wrongSpecialty, bookedOnly, outsideWindow));
+		when(availabilitySlotRepository.findMatchingOpenSlots(
+				"60601",
+				ApplianceSpecialty.REFRIGERATOR,
+				WINDOW_START,
+				WINDOW_END))
+				.thenReturn(List.of());
 
 		List<SchedulingMatchResponse> matches = schedulingService.findMatches("60601", ApplianceSpecialty.REFRIGERATOR,
 				WINDOW_START, WINDOW_END);
@@ -78,7 +77,12 @@ class SchedulingServiceTest {
 		AvailabilitySlot boundarySlot = new AvailabilitySlot(WINDOW_START, WINDOW_END);
 		technician.addAvailabilitySlot(boundarySlot);
 
-		when(technicianRepository.findAll()).thenReturn(List.of(technician));
+		when(availabilitySlotRepository.findMatchingOpenSlots(
+				"60601",
+				ApplianceSpecialty.OVEN,
+				WINDOW_START,
+				WINDOW_END))
+				.thenReturn(List.of(boundarySlot));
 
 		List<SchedulingMatchResponse> matches = schedulingService.findMatches("60601", ApplianceSpecialty.OVEN,
 				WINDOW_START, WINDOW_END);
