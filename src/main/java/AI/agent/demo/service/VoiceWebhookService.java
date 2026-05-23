@@ -2,9 +2,17 @@ package AI.agent.demo.service;
 
 import AI.agent.demo.dto.ai.AiDialogueResult;
 import AI.agent.demo.dto.ai.CallSessionUpdates;
+import AI.agent.demo.dto.AppointmentResponse;
+import AI.agent.demo.dto.CreateAppointmentRequest;
+import AI.agent.demo.dto.SchedulingMatchResponse;
 import AI.agent.demo.model.CallSession;
 import AI.agent.demo.model.ConversationStage;
 import AI.agent.demo.repository.CallSessionRepository;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.List;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,10 +25,13 @@ public class VoiceWebhookService {
 
 	private final CallSessionRepository callSessionRepository;
 	private final AiDiagnosticService aiDiagnosticService;
+	private final SchedulingService schedulingService;
+	private final AppointmentService appointmentService;
 
 	@Transactional
-	public String incomingCallInstructions(String callSid) {
+	public String incomingCallInstructions(String callSid, String callerPhoneNumber) {
 		CallSession session = getOrCreateSession(callSid);
+		captureCallerPhoneNumber(session, callerPhoneNumber);
 		session.setCurrentStage(nextMissingStage(session));
 		callSessionRepository.save(session);
 		return response(gather(
@@ -31,8 +42,9 @@ public class VoiceWebhookService {
 	}
 
 	@Transactional
-	public String respondToCaller(String callSid, String speechResult) {
+	public String respondToCaller(String callSid, String callerPhoneNumber, String speechResult) {
 		CallSession session = getOrCreateSession(callSid);
+		captureCallerPhoneNumber(session, callerPhoneNumber);
 		if (!StringUtils.hasText(speechResult)) {
 			return response(gather(
 					"/voice/respond",
@@ -40,12 +52,15 @@ public class VoiceWebhookService {
 					"auto",
 					"I did not catch that. " + questionFor(session.getCurrentStage())));
 		}
+		if (session.getCurrentStage() == ConversationStage.SLOT_CONFIRMATION) {
+			return handleSlotConfirmation(session, speechResult.trim());
+		}
 		AiDialogueResult aiDialogueResult = aiDiagnosticService.nextTurn(session, speechResult.trim());
 		applyUpdates(session, aiDialogueResult.updates());
 		session.setCurrentStage(nextMissingStage(session));
 		callSessionRepository.save(session);
 		if (session.getCurrentStage() == ConversationStage.READY_TO_SCHEDULE) {
-			return response(say(aiDialogueResult.assistantMessage()));
+			return proposeAppointmentSlot(session);
 		}
 		return response(gather(
 				"/voice/respond",
@@ -59,6 +74,134 @@ public class VoiceWebhookService {
 		return callSessionRepository
 				.findByCallSid(normalizedCallSid)
 				.orElseGet(() -> new CallSession(normalizedCallSid));
+	}
+
+	private void captureCallerPhoneNumber(CallSession session, String callerPhoneNumber) {
+		if (!StringUtils.hasText(session.getCallerPhoneNumber()) && StringUtils.hasText(callerPhoneNumber)) {
+			session.setCallerPhoneNumber(callerPhoneNumber.trim());
+		}
+	}
+
+	private String proposeAppointmentSlot(CallSession session) {
+		AvailabilityWindow availabilityWindow = availabilityWindowFor(session.getAvailability());
+		List<SchedulingMatchResponse> matches = schedulingService.findMatches(
+				session.getZipCode(),
+				session.getApplianceType(),
+				availabilityWindow.start(),
+				availabilityWindow.end());
+		if (matches.isEmpty()) {
+			session.setAvailability(null);
+			session.setCurrentStage(ConversationStage.AVAILABILITY);
+			callSessionRepository.save(session);
+			return response(gather(
+					"/voice/respond",
+					"speech",
+					"auto",
+					"I could not find an open appointment for that time. What other day and time works for you?"));
+		}
+		SchedulingMatchResponse match = matches.get(0);
+		SchedulingMatchResponse.OpenSlotResponse openSlot = match.openSlots().get(0);
+		session.setProposedSlotId(openSlot.slotId());
+		session.setProposedTechnicianName(match.technicianName());
+		session.setCurrentStage(ConversationStage.SLOT_CONFIRMATION);
+		callSessionRepository.save(session);
+		return response(gather(
+				"/voice/respond",
+				"speech",
+				"auto",
+				"I found an appointment with " + match.technicianName() + " starting at "
+						+ openSlot.startsAt() + ". Would you like me to book and confirm this appointment?"));
+	}
+
+	private String handleSlotConfirmation(CallSession session, String speech) {
+		if (isNegativeConfirmation(speech)) {
+			session.setProposedSlotId(null);
+			session.setProposedTechnicianName(null);
+			session.setAvailability(null);
+			session.setCurrentStage(ConversationStage.AVAILABILITY);
+			callSessionRepository.save(session);
+			return response(gather(
+					"/voice/respond",
+					"speech",
+					"auto",
+					"No problem. What other day and time works for the appointment?"));
+		}
+		if (!isPositiveConfirmation(speech)) {
+			return response(gather(
+					"/voice/respond",
+					"speech",
+					"auto",
+					"Please say yes to confirm this appointment, or no to look for another time."));
+		}
+
+		AppointmentResponse createdAppointment = appointmentService.createAppointment(createAppointmentRequest(session));
+		AppointmentResponse confirmedAppointment = appointmentService.confirmAppointment(createdAppointment.appointmentId());
+		session.setAppointmentId(confirmedAppointment.appointmentId());
+		session.setCurrentStage(ConversationStage.APPOINTMENT_CONFIRMED);
+		callSessionRepository.save(session);
+
+		return response(say("Your appointment is confirmed with " + confirmedAppointment.technicianName()
+				+ " at " + confirmedAppointment.scheduledAt() + ". Thank you for calling Sears Home Services."));
+	}
+
+	private CreateAppointmentRequest createAppointmentRequest(CallSession session) {
+		String[] nameParts = splitName(session.getCustomerName());
+		return new CreateAppointmentRequest(
+				session.getProposedSlotId(),
+				session.getApplianceType(),
+				issueDescription(session),
+				nameParts[0],
+				nameParts[1],
+				StringUtils.hasText(session.getCallerPhoneNumber()) ? session.getCallerPhoneNumber() : "unknown",
+				"voice-customer@example.com",
+				"Address captured by voice follow-up",
+				session.getZipCode());
+	}
+
+	private String issueDescription(CallSession session) {
+		return "Symptoms: " + session.getSymptoms()
+				+ "; error codes: " + session.getErrorCodes()
+				+ "; troubleshooting: " + session.getPriorTroubleshootingSteps();
+	}
+
+	private String[] splitName(String customerName) {
+		if (!StringUtils.hasText(customerName)) {
+			return new String[] { "Voice", "Customer" };
+		}
+		String[] parts = customerName.trim().split("\\s+", 2);
+		if (parts.length == 1) {
+			return new String[] { parts[0], "Customer" };
+		}
+		return parts;
+	}
+
+	private AvailabilityWindow availabilityWindowFor(String availability) {
+		LocalDate today = LocalDate.now();
+		String normalizedAvailability = availability == null ? "" : availability.toLowerCase(Locale.ROOT);
+		LocalDate targetDate = today.plusDays(1);
+		if (normalizedAvailability.contains("after tomorrow")) {
+			targetDate = today.plusDays(2);
+		}
+		LocalTime startTime = normalizedAvailability.contains("afternoon") ? LocalTime.of(12, 0) : LocalTime.of(8, 0);
+		LocalTime endTime = normalizedAvailability.contains("morning") ? LocalTime.of(12, 0) : LocalTime.of(18, 0);
+		return new AvailabilityWindow(
+				LocalDateTime.of(targetDate, startTime),
+				LocalDateTime.of(targetDate.plusDays(5), endTime));
+	}
+
+	private boolean isPositiveConfirmation(String speech) {
+		String normalizedSpeech = speech.toLowerCase(Locale.ROOT);
+		return normalizedSpeech.contains("yes")
+				|| normalizedSpeech.contains("confirm")
+				|| normalizedSpeech.contains("book it")
+				|| normalizedSpeech.contains("that works");
+	}
+
+	private boolean isNegativeConfirmation(String speech) {
+		String normalizedSpeech = speech.toLowerCase(Locale.ROOT);
+		return normalizedSpeech.contains("no")
+				|| normalizedSpeech.contains("another")
+				|| normalizedSpeech.contains("different");
 	}
 
 	private void applyUpdates(CallSession session, CallSessionUpdates updates) {
@@ -108,6 +251,12 @@ public class VoiceWebhookService {
 		if (!StringUtils.hasText(session.getAvailability())) {
 			return ConversationStage.AVAILABILITY;
 		}
+		if (session.getAppointmentId() != null) {
+			return ConversationStage.APPOINTMENT_CONFIRMED;
+		}
+		if (session.getProposedSlotId() != null) {
+			return ConversationStage.SLOT_CONFIRMATION;
+		}
 		return ConversationStage.READY_TO_SCHEDULE;
 	}
 
@@ -121,7 +270,12 @@ public class VoiceWebhookService {
 			case CUSTOMER_NAME -> "What is your name?";
 			case AVAILABILITY -> "What day and time works best for the appointment?";
 			case READY_TO_SCHEDULE -> "I have enough information to look for appointment times.";
+			case SLOT_CONFIRMATION -> "Would you like to confirm the proposed appointment?";
+			case APPOINTMENT_CONFIRMED -> "Your appointment is confirmed.";
 		};
+	}
+
+	private record AvailabilityWindow(LocalDateTime start, LocalDateTime end) {
 	}
 
 	private String response(String body) {
