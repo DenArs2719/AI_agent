@@ -9,10 +9,12 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 @Service
+@ConditionalOnProperty(name = "app.ai.provider", havingValue = "demo", matchIfMissing = true)
 public class DemoAiDiagnosticService implements AiDiagnosticService {
 
 	private static final Pattern ZIP_CODE_PATTERN = Pattern.compile("\\b\\d{5}\\b");
