@@ -159,13 +159,11 @@ public class VoiceWebhookService {
 					"auto",
 					"Please say yes to confirm this appointment, or no to look for another time."));
 		}
-
 		AppointmentResponse createdAppointment = appointmentService.createAppointment(createAppointmentRequest(session));
 		AppointmentResponse confirmedAppointment = appointmentService.confirmAppointment(createdAppointment.appointmentId());
 		session.setAppointmentId(confirmedAppointment.appointmentId());
 		session.setCurrentStage(ConversationStage.APPOINTMENT_CONFIRMED);
 		callSessionRepository.save(session);
-
 		return response(say("Your appointment is confirmed with " + confirmedAppointment.technicianName()
 				+ " at " + confirmedAppointment.scheduledAt() + ". Thank you for calling Sears Home Services."));
 	}
