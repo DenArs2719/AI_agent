@@ -66,7 +66,7 @@ public class VoiceWebhookService {
 				"/voice/respond",
 				"speech",
 				"auto",
-				"Thanks, I captured that. " + aiDialogueResult.assistantMessage()));
+				"Thanks, " + aiDialogueResult.assistantMessage()));
 	}
 
 	private CallSession getOrCreateSession(String callSid) {
