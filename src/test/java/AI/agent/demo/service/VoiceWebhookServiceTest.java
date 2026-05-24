@@ -298,6 +298,54 @@ class VoiceWebhookServiceTest {
 	}
 
 	@Test
+	void respondToCallerUsesAiTroubleshootingPromptWhenMoreDiagnosisIsNeeded() {
+		CallSession session = new CallSession("CA123");
+		session.setApplianceType(ApplianceSpecialty.REFRIGERATOR);
+		session.setSymptoms("Refrigerator is leaking");
+		session.setErrorCodes("No error code");
+		session.setCurrentStage(ConversationStage.TROUBLESHOOTING_STEPS);
+		when(callSessionRepository.findByCallSid("CA123")).thenReturn(Optional.of(session));
+		when(aiDiagnosticService.nextTurn(session, "I have not tried anything yet"))
+				.thenReturn(new AiDialogueResult(
+						"Please check whether the refrigerator door is fully closed. Is the leak still happening?",
+						new CallSessionUpdates(null, null, null, null, null, null, null),
+						false,
+						false,
+						true));
+		when(callSessionRepository.save(any(CallSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		String twiml = voiceWebhookService.respondToCaller("CA123", null, "I have not tried anything yet");
+
+		assertThat(session.getCurrentStage()).isEqualTo(ConversationStage.TROUBLESHOOTING_STEPS);
+		assertThat(session.getPriorTroubleshootingSteps()).isNull();
+		assertThat(twiml).contains("Please check whether the refrigerator door is fully closed");
+	}
+
+	@Test
+	void respondToCallerEndsCallWhenAiReportsIssueResolved() {
+		CallSession session = new CallSession("CA123");
+		session.setApplianceType(ApplianceSpecialty.REFRIGERATOR);
+		session.setSymptoms("Refrigerator is leaking");
+		session.setErrorCodes("No error code");
+		session.setCurrentStage(ConversationStage.TROUBLESHOOTING_STEPS);
+		when(callSessionRepository.findByCallSid("CA123")).thenReturn(Optional.of(session));
+		when(aiDiagnosticService.nextTurn(session, "That fixed it"))
+				.thenReturn(new AiDialogueResult(
+						"Glad that fixed it.",
+						new CallSessionUpdates(null, null, null, "Customer checked the door and issue is fixed", null, null, null),
+						true,
+						false,
+						false));
+		when(callSessionRepository.save(any(CallSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		String twiml = voiceWebhookService.respondToCaller("CA123", null, "That fixed it");
+
+		assertThat(session.getPriorTroubleshootingSteps()).isEqualTo("Customer checked the door and issue is fixed");
+		assertThat(twiml).contains("I&apos;m glad we could help resolve the issue");
+		assertThat(twiml).doesNotContain("<Gather");
+	}
+
+	@Test
 	void respondToCallerRecordsFailureAndReturnsRetryTwiMLWhenDialogueFails() {
 		CallSession session = new CallSession("CA123");
 		session.setApplianceType(ApplianceSpecialty.REFRIGERATOR);

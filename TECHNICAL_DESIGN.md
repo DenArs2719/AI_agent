@@ -49,9 +49,9 @@ Twilio is used for the voice transport. The application returns TwiML with `<Gat
 
 ### OpenAI Responses API
 
-OpenAI is used for structured dialogue extraction. The model receives the current call-session state and the latest caller speech, then returns JSON updates for fields such as appliance type, symptoms, error codes, ZIP code, and availability.
+OpenAI is used for structured dialogue extraction and adaptive diagnostic prompts. The model receives the current call-session state and the latest caller speech, then returns JSON updates for fields such as appliance type, symptoms, error codes, ZIP code, and availability. It also returns control flags such as `issueResolved`, `readyForScheduling`, and `needsMoreTroubleshooting`.
 
-The model does not make scheduling decisions. It does not pick technicians, create appointments, or decide whether a slot is valid. Those decisions remain deterministic backend logic.
+The model may suggest one concise safe troubleshooting or clarifying prompt during the troubleshooting stage. It does not make scheduling decisions. It does not pick technicians, create appointments, or decide whether a slot is valid. Those decisions remain deterministic backend logic.
 
 ## Conversation State
 
@@ -97,6 +97,8 @@ ABANDONED
 ## Diagnostic Guidance
 
 The system includes a small safe troubleshooting knowledge map for washer, dryer, refrigerator, dishwasher, oven, and HVAC. The voice flow presents appliance-specific safe checks during the troubleshooting stage.
+
+OpenAI can make this step more conversational by asking one safe clarifying question or providing one safe basic check based on the appliance and symptoms. The backend constrains the model to safe topics and still controls the state machine. If the model reports that the issue is resolved, the call ends without scheduling. If troubleshooting is complete but the issue remains, the backend proceeds to collect the remaining scheduling fields.
 
 Examples include:
 
@@ -171,7 +173,7 @@ Using Twilio speech gathering and TwiML text-to-speech keeps the initial system 
 
 ### LLM Extraction Plus Deterministic Backend Logic
 
-The LLM is useful for interpreting natural speech, but deterministic Java code owns the workflow, required fields, scheduling, and appointment creation. This reduces the risk of hallucinated appointments or skipped data.
+The LLM is useful for interpreting natural speech and making troubleshooting feel less scripted, but deterministic Java code owns the workflow, required fields, scheduling, and appointment creation. This reduces the risk of hallucinated appointments or skipped data while still allowing adaptive diagnostic questions.
 
 ### Monolith For The Take-Home
 

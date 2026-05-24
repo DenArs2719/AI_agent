@@ -91,6 +91,18 @@ public class VoiceWebhookService {
 		applyUpdates(session, aiDialogueResult.updates());
 		session.setCurrentStage(nextMissingStage(session));
 		callSessionRepository.save(session);
+		if (aiDialogueResult.issueResolved()) {
+			return response(say("I'm glad we could help resolve the issue. Thank you for calling Sears Home Services."));
+		}
+		if (shouldUseAiTroubleshootingPrompt(session, aiDialogueResult)) {
+			session.setCurrentStage(ConversationStage.TROUBLESHOOTING_STEPS);
+			callSessionRepository.save(session);
+			return response(gather(
+					"/voice/respond",
+					"speech",
+					"auto",
+					aiDialogueResult.assistantMessage()));
+		}
 		if (session.getCurrentStage() == ConversationStage.READY_TO_SCHEDULE) {
 			return proposeAppointmentSlot(session);
 		}
@@ -417,6 +429,13 @@ public class VoiceWebhookService {
 				|| normalizedSpeech.contains("resume")
 				|| normalizedSpeech.contains("same request")
 				|| normalizedSpeech.contains("yes");
+	}
+
+	private boolean shouldUseAiTroubleshootingPrompt(CallSession session, AiDialogueResult aiDialogueResult) {
+		return session.getCurrentStage() == ConversationStage.TROUBLESHOOTING_STEPS
+				&& aiDialogueResult.needsMoreTroubleshooting()
+				&& StringUtils.hasText(aiDialogueResult.assistantMessage())
+				&& !StringUtils.hasText(session.getPriorTroubleshootingSteps());
 	}
 
 	private void applyUpdates(CallSession session, CallSessionUpdates updates) {

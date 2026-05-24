@@ -35,7 +35,7 @@ Caller
 
 The voice flow is intentionally split between AI extraction and deterministic backend logic:
 
-- OpenAI extracts structured updates from caller speech.
+- OpenAI extracts structured updates from caller speech and can propose one safe diagnostic or troubleshooting prompt.
 - The backend decides the next required conversation stage.
 - The backend performs technician matching and appointment creation.
 - The backend never lets the model choose technicians, book appointments, or skip required fields.
@@ -171,7 +171,15 @@ When the caller accepts the proposed slot, `AppointmentService` creates the appo
 - oven
 - HVAC
 
-The voice flow reads appliance-specific checks during the troubleshooting stage, for example power, door/lid closed, breaker, filters, vents, water supply, and visible error codes. It avoids unsafe instructions such as internal wiring, panels, or gas-line inspection.
+The voice flow reads appliance-specific checks during the troubleshooting stage, for example power, door/lid closed, breaker, filters, vents, water supply, and visible error codes. OpenAI may also ask one adaptive safe clarifying question or provide one safe troubleshooting step based on the caller's appliance and symptoms. The backend still controls whether mandatory fields are complete and whether scheduling can begin.
+
+The AI response includes flags such as:
+
+- `issueResolved`
+- `readyForScheduling`
+- `needsMoreTroubleshooting`
+
+If the issue is resolved, the call ends without scheduling. If more troubleshooting is needed, the app repeats a TwiML speech gather with the AI's safe prompt. If the issue is not resolved and mandatory fields are complete, the backend moves to deterministic scheduling.
 
 ## API Endpoints
 
@@ -415,7 +423,7 @@ Build the app:
 ## Design Tradeoffs
 
 - Twilio is used for telephony, speech gathering, and text-to-speech through TwiML. This keeps the demo small and avoids separate STT/TTS services.
-- OpenAI is used for structured dialogue extraction, not for scheduling decisions.
+- OpenAI is used for structured dialogue extraction and adaptive safe troubleshooting prompts, not for scheduling decisions.
 - Scheduling and appointment creation are deterministic Java logic for reliability and testability.
 - PostgreSQL stores both scheduling data and call-session memory.
 - Scheduling filters run in the database for better scalability than loading all technicians into memory.

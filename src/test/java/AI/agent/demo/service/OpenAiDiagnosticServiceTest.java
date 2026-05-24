@@ -36,7 +36,7 @@ class OpenAiDiagnosticServiceTest {
 		session.setCurrentStage(ConversationStage.APPLIANCE_TYPE);
 		String responseBody = """
 				{
-				  "output_text": "{\\"assistantMessage\\":\\"Do you see any error codes?\\",\\"updates\\":{\\"applianceType\\":\\"REFRIGERATOR\\",\\"symptoms\\":\\"My refrigerator is leaking\\",\\"errorCodes\\":null,\\"priorTroubleshootingSteps\\":null,\\"zipCode\\":\\"60601\\",\\"customerName\\":null,\\"availability\\":null}}"
+				  "output_text": "{\\"assistantMessage\\":\\"Do you see any error codes?\\",\\"issueResolved\\":false,\\"readyForScheduling\\":false,\\"needsMoreTroubleshooting\\":true,\\"updates\\":{\\"applianceType\\":\\"REFRIGERATOR\\",\\"symptoms\\":\\"My refrigerator is leaking\\",\\"errorCodes\\":null,\\"priorTroubleshootingSteps\\":null,\\"zipCode\\":\\"60601\\",\\"customerName\\":null,\\"availability\\":null}}"
 				}
 				""";
 		mockServer.expect(once(), requestTo("https://api.openai.com/v1/responses"))
@@ -50,6 +50,9 @@ class OpenAiDiagnosticServiceTest {
 		assertThat(result.updates().applianceType()).isEqualTo(ApplianceSpecialty.REFRIGERATOR);
 		assertThat(result.updates().symptoms()).isEqualTo("My refrigerator is leaking");
 		assertThat(result.updates().zipCode()).isEqualTo("60601");
+		assertThat(result.issueResolved()).isFalse();
+		assertThat(result.readyForScheduling()).isFalse();
+		assertThat(result.needsMoreTroubleshooting()).isTrue();
 		mockServer.verify();
 	}
 

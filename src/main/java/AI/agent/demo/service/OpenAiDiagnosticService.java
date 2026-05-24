@@ -88,7 +88,7 @@ public class OpenAiDiagnosticService implements AiDiagnosticService {
 	private String systemInstructions() {
 		return """
 		You are a Sears Home Services voice diagnostic assistant.
-		Your job is to extract structured fields from each caller response and ask for the next missing field.
+		Your job is to extract structured fields from each caller response and suggest one safe next diagnostic message.
 
 		Follow this exact field order:
 		1. applianceType
@@ -102,10 +102,15 @@ public class OpenAiDiagnosticService implements AiDiagnosticService {
 		Never invent appliance type, ZIP code, customer name, availability, error codes, or troubleshooting steps.
 		Only fill a field when the caller clearly provided that value.
 		Do not ask again for information already present in the session state.
-		Ask exactly one concise question for the earliest missing field after applying updates from the caller's latest speech.
 
-		If the current field is priorTroubleshootingSteps and the caller says they checked power, door, lid, filter, breaker, water supply, vent, thermostat, restarted it, or tried nothing, capture that answer and move on.
-		Do not ask extra troubleshooting questions after priorTroubleshootingSteps has a value.
+		When mandatory information is missing, assistantMessage should ask exactly one concise question for the earliest missing field after applying updates from the caller's latest speech.
+
+		When the current stage is TROUBLESHOOTING_STEPS, assistantMessage may ask one relevant safe diagnostic question or provide one safe troubleshooting step.
+		Use only safe basic troubleshooting: power, door or lid closed, filter, breaker, visible error code, water supply, vent, thermostat, restart.
+		Do not suggest opening panels, touching wiring, moving gas lines, bypassing safety switches, or performing repairs.
+		If the caller already tried enough safe checks, or says they want service, set readyForScheduling to true and capture priorTroubleshootingSteps.
+		If the caller says the issue is fixed, set issueResolved to true.
+		Set needsMoreTroubleshooting to true only when assistantMessage is a safe troubleshooting or clarifying prompt and priorTroubleshootingSteps is still null.
 
 		If all fields are present after applying updates, assistantMessage must say:
 		Thank you. I have enough information to look for matching technicians and appointment times.
@@ -140,9 +145,17 @@ public class OpenAiDiagnosticService implements AiDiagnosticService {
 				"schema", Map.of(
 						"type", "object",
 						"additionalProperties", false,
-						"required", List.of("assistantMessage", "updates"),
+						"required", List.of(
+								"assistantMessage",
+								"updates",
+								"issueResolved",
+								"readyForScheduling",
+								"needsMoreTroubleshooting"),
 						"properties", Map.of(
 								"assistantMessage", Map.of("type", "string"),
+								"issueResolved", Map.of("type", "boolean"),
+								"readyForScheduling", Map.of("type", "boolean"),
+								"needsMoreTroubleshooting", Map.of("type", "boolean"),
 								"updates", updatesSchema())));
 	}
 
@@ -188,7 +201,10 @@ public class OpenAiDiagnosticService implements AiDiagnosticService {
 							textOrNull(updatesNode.path("priorTroubleshootingSteps")),
 							textOrNull(updatesNode.path("zipCode")),
 							textOrNull(updatesNode.path("customerName")),
-							textOrNull(updatesNode.path("availability"))));
+							textOrNull(updatesNode.path("availability"))),
+					dialogueNode.path("issueResolved").asBoolean(false),
+					dialogueNode.path("readyForScheduling").asBoolean(false),
+					dialogueNode.path("needsMoreTroubleshooting").asBoolean(false));
 		}
 		catch (JacksonException exception) {
 			throw new IllegalStateException("OpenAI returned an invalid dialogue response.", exception);
