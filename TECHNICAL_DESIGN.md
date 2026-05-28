@@ -18,7 +18,7 @@ The implementation focuses on Tier 1 and Tier 2 of the assignment:
 The application is a Spring Boot monolith with clear internal boundaries:
 
 ```text
-Twilio
+Twilio or Telnyx
   -> VoiceWebhookController
   -> VoiceWebhookService
       -> OpenAiDiagnosticService
@@ -29,7 +29,7 @@ Twilio
   -> PostgreSQL
 ```
 
-The voice layer receives Twilio webhooks and returns TwiML. The service layer owns business behavior. Repositories own persistence. This keeps controller code thin and makes the scheduling and appointment logic reusable from both REST APIs and the voice workflow.
+The voice layer receives provider webhooks and returns provider-specific XML through a `VoiceResponseBuilder` abstraction. The service layer owns business behavior. Repositories own persistence. This keeps controller code thin and makes the scheduling and appointment logic reusable from both REST APIs and the voice workflow.
 
 If this became a microservice architecture, `VoiceWebhookService` would keep the same orchestration role, but `SchedulingService` and `AppointmentService` would be replaced by API client classes that call separate scheduling and appointment services over HTTP.
 
@@ -43,9 +43,18 @@ Spring Boot was selected because it provides a productive backend framework for 
 
 PostgreSQL stores technician data, availability, appointments, customers, and call-session memory. A relational model fits the scheduling problem well because the core queries involve joins across technicians, service areas, specialties, and availability slots.
 
-### Twilio
+### Twilio And Telnyx
 
-Twilio is used for the voice transport. The application returns TwiML with `<Gather input="speech">` and `<Say>`, so Twilio handles the inbound call, speech capture, and text-to-speech. This avoids adding separate speech-to-text and text-to-speech providers for the initial implementation.
+The app can use Twilio TwiML or Telnyx TeXML for voice transport. Both implementations use the same internal interface:
+
+```java
+public interface VoiceResponseBuilder {
+    String gather(String action, String prompt);
+    String say(String prompt);
+}
+```
+
+The default `twilio` provider returns TwiML with `<Gather input="speech">` and `<Say>`. The `telnyx` provider remains available and returns TeXML with `<Gather input="speech">`, `<Say>`, and Telnyx transcription. In both cases, the provider handles the inbound call, speech capture, and text-to-speech, which avoids adding separate STT/TTS services for this take-home.
 
 ### OpenAI Responses API
 
@@ -167,9 +176,9 @@ This preserves useful debugging state and avoids dropping the call with a raw HT
 
 ## Tradeoffs
 
-### Twilio STT/TTS Instead Of Separate Providers
+### Provider STT/TTS Instead Of Separate Services
 
-Using Twilio speech gathering and TwiML text-to-speech keeps the initial system smaller and easier to review. A production system might use a dedicated streaming STT/TTS stack for lower latency and more natural turn-taking.
+Using Twilio or Telnyx speech gathering and text-to-speech keeps the initial system smaller and easier to review. A production system might use a dedicated streaming STT/TTS stack for lower latency and more natural turn-taking.
 
 ### LLM Extraction Plus Deterministic Backend Logic
 

@@ -20,6 +20,7 @@ import AI.agent.demo.model.ConversationStage;
 import AI.agent.demo.model.Customer;
 import AI.agent.demo.repository.AppointmentRepository;
 import AI.agent.demo.repository.CallSessionRepository;
+import AI.agent.demo.service.voice.TwilioVoiceResponseBuilder;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -29,6 +30,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.Spy;
 
 @ExtendWith(MockitoExtension.class)
 class VoiceWebhookServiceTest {
@@ -49,6 +51,9 @@ class VoiceWebhookServiceTest {
 
 	@Mock
 	private AppointmentRepository appointmentRepository;
+
+	@Spy
+	private TwilioVoiceResponseBuilder voiceResponseBuilder = new TwilioVoiceResponseBuilder();
 
 	@InjectMocks
 	private VoiceWebhookService voiceWebhookService;

@@ -23,6 +23,8 @@ spring:
             enable: true
 
 app:
+  voice:
+    provider: ${VOICE_PROVIDER:twilio}
   twilio:
     account-sid: ${TWILIO_ACCOUNT_SID}
     auth-token: ${TWILIO_AUTH_TOKEN}

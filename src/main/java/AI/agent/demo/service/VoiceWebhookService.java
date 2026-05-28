@@ -11,6 +11,7 @@ import AI.agent.demo.model.CallSession;
 import AI.agent.demo.model.ConversationStage;
 import AI.agent.demo.repository.AppointmentRepository;
 import AI.agent.demo.repository.CallSessionRepository;
+import AI.agent.demo.service.voice.VoiceResponseBuilder;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -31,7 +32,8 @@ public class VoiceWebhookService {
 	private static final Set<ConversationStage> NON_RESUMABLE_STAGES = Set.of(
 			ConversationStage.APPOINTMENT_CONFIRMED,
 			ConversationStage.FAILED,
-			ConversationStage.ABANDONED);
+			ConversationStage.ABANDONED
+	);
 
 	private final CallSessionRepository callSessionRepository;
 	private final AiDiagnosticService aiDiagnosticService;
@@ -39,6 +41,7 @@ public class VoiceWebhookService {
 	private final AppointmentService appointmentService;
 	private final TroubleshootingScriptService troubleshootingScriptService;
 	private final AppointmentRepository appointmentRepository;
+	private final VoiceResponseBuilder voiceResponseBuilder;
 
 	@Transactional
 	public String incomingCallInstructions(String callSid, String callerPhoneNumber) {
@@ -46,19 +49,15 @@ public class VoiceWebhookService {
 		captureCallerPhoneNumber(session, callerPhoneNumber);
 		if (isNewSession(session) && (linkExistingAppointment(session) || linkIncompleteSession(session))) {
 			callSessionRepository.save(session);
-			return response(gather(
+			return voiceResponseBuilder.gather(
 					"/voice/respond",
-					"speech",
-					"auto",
-					"Thanks for calling Sears Home Services. " + questionFor(session)));
+					"Thanks for calling Sears Home Services. " + questionFor(session));
 		}
 		session.setCurrentStage(nextMissingStage(session));
 		callSessionRepository.save(session);
-		return response(gather(
+		return voiceResponseBuilder.gather(
 				"/voice/respond",
-				"speech",
-				"auto",
-				"Thanks for calling Sears Home Services. " + questionFor(session)));
+				"Thanks for calling Sears Home Services. " + questionFor(session));
 	}
 
 	@Transactional
@@ -66,11 +65,9 @@ public class VoiceWebhookService {
 		CallSession session = getOrCreateSession(callSid);
 		captureCallerPhoneNumber(session, callerPhoneNumber);
 		if (!StringUtils.hasText(speechResult)) {
-			return response(gather(
+			return voiceResponseBuilder.gather(
 					"/voice/respond",
-					"speech",
-					"auto",
-					"I did not catch that. " + questionFor(session)));
+					"I did not catch that. " + questionFor(session));
 		}
 		if (session.getCurrentStage() == ConversationStage.SLOT_CONFIRMATION) {
 			return handleSlotConfirmation(session, speechResult.trim());
@@ -92,25 +89,21 @@ public class VoiceWebhookService {
 		session.setCurrentStage(nextMissingStage(session));
 		callSessionRepository.save(session);
 		if (aiDialogueResult.issueResolved()) {
-			return response(say("I'm glad we could help resolve the issue. Thank you for calling Sears Home Services."));
+			return voiceResponseBuilder.say("I'm glad we could help resolve the issue. Thank you for calling Sears Home Services.");
 		}
 		if (shouldUseAiTroubleshootingPrompt(session, aiDialogueResult)) {
 			session.setCurrentStage(ConversationStage.TROUBLESHOOTING_STEPS);
 			callSessionRepository.save(session);
-			return response(gather(
+			return voiceResponseBuilder.gather(
 					"/voice/respond",
-					"speech",
-					"auto",
-					aiDialogueResult.assistantMessage()));
+					aiDialogueResult.assistantMessage());
 		}
 		if (session.getCurrentStage() == ConversationStage.READY_TO_SCHEDULE) {
 			return proposeAppointmentSlot(session);
 		}
-		return response(gather(
+		return voiceResponseBuilder.gather(
 				"/voice/respond",
-				"speech",
-				"auto",
-				questionFor(session)));
+				questionFor(session));
 	}
 
 	private String handleDialogueFailure(CallSession session, RuntimeException exception) {
@@ -122,11 +115,9 @@ public class VoiceWebhookService {
 		session.setLastErrorAt(LocalDateTime.now());
 		session.setErrorCount(session.getErrorCount() + 1);
 		callSessionRepository.save(session);
-		return response(gather(
+		return voiceResponseBuilder.gather(
 				"/voice/respond",
-				"speech",
-				"auto",
-				"I am sorry, I had trouble processing that answer. " + questionFor(failedStage, session)));
+				"I am sorry, I had trouble processing that answer. " + questionFor(failedStage, session));
 	}
 
 	private CallSession getOrCreateSession(String callSid) {
@@ -173,7 +164,8 @@ public class VoiceWebhookService {
 				.findLatestIncompleteSessionByCallerPhoneNumber(
 						session.getCallerPhoneNumber(),
 						session.getCallSid(),
-						NON_RESUMABLE_STAGES)
+						NON_RESUMABLE_STAGES
+				)
 				.map(previousSession -> {
 					copyDiagnosticState(previousSession, session);
 					session.setCurrentStage(ConversationStage.RESUME_INCOMPLETE_SESSION);
@@ -197,11 +189,9 @@ public class VoiceWebhookService {
 			session.setAvailability(null);
 			session.setCurrentStage(ConversationStage.AVAILABILITY);
 			callSessionRepository.save(session);
-			return response(gather(
+			return voiceResponseBuilder.gather(
 					"/voice/respond",
-					"speech",
-					"auto",
-					"I could not find an open appointment for that time. What other day and time works for you?"));
+					"I could not find an open appointment for that time. What other day and time works for you?");
 		}
 		SchedulingMatchResponse match = matches.get(0);
 		SchedulingMatchResponse.OpenSlotResponse openSlot = match.openSlots().get(0);
@@ -209,12 +199,10 @@ public class VoiceWebhookService {
 		session.setProposedTechnicianName(match.technicianName());
 		session.setCurrentStage(ConversationStage.SLOT_CONFIRMATION);
 		callSessionRepository.save(session);
-		return response(gather(
+		return voiceResponseBuilder.gather(
 				"/voice/respond",
-				"speech",
-				"auto",
 				"I found an appointment with " + match.technicianName() + " starting at "
-						+ openSlot.startsAt() + ". Would you like me to book and confirm this appointment?"));
+						+ openSlot.startsAt() + ". Would you like me to book and confirm this appointment?");
 	}
 
 	private String handleSlotConfirmation(CallSession session, String speech) {
@@ -224,75 +212,61 @@ public class VoiceWebhookService {
 			session.setAvailability(null);
 			session.setCurrentStage(ConversationStage.AVAILABILITY);
 			callSessionRepository.save(session);
-			return response(gather(
+			return voiceResponseBuilder.gather(
 					"/voice/respond",
-					"speech",
-					"auto",
-					"No problem. What other day and time works for the appointment?"));
+					"No problem. What other day and time works for the appointment?");
 		}
 		if (!isPositiveConfirmation(speech)) {
-			return response(gather(
+			return voiceResponseBuilder.gather(
 					"/voice/respond",
-					"speech",
-					"auto",
-					"Please say yes to confirm this appointment, or no to look for another time."));
+					"Please say yes to confirm this appointment, or no to look for another time.");
 		}
 		AppointmentResponse createdAppointment = appointmentService.createAppointment(createAppointmentRequest(session));
 		AppointmentResponse confirmedAppointment = appointmentService.confirmAppointment(createdAppointment.appointmentId());
 		session.setAppointmentId(confirmedAppointment.appointmentId());
 		session.setCurrentStage(ConversationStage.APPOINTMENT_CONFIRMED);
 		callSessionRepository.save(session);
-		return response(say("Your appointment is confirmed with " + confirmedAppointment.technicianName()
-				+ " at " + confirmedAppointment.scheduledAt() + ". Thank you for calling Sears Home Services."));
+		return voiceResponseBuilder.say("Your appointment is confirmed with " + confirmedAppointment.technicianName()
+				+ " at " + confirmedAppointment.scheduledAt() + ". Thank you for calling Sears Home Services.");
 	}
 
 	private String handleReturningCaller(CallSession session, String speech) {
 		if (isNewIssueIntent(speech)) {
 			startNewIssue(session);
 			callSessionRepository.save(session);
-			return response(gather(
+			return voiceResponseBuilder.gather(
 					"/voice/respond",
-					"speech",
-					"auto",
-					"No problem. " + questionFor(session)));
+					"No problem. " + questionFor(session));
 		}
 		if (isExistingAppointmentIntent(speech)) {
 			session.setCurrentStage(ConversationStage.APPOINTMENT_CONFIRMED);
 			callSessionRepository.save(session);
-			return response(say("I found your existing appointment. The appointment remains confirmed. "
-					+ "Thank you for calling Sears Home Services."));
+			return voiceResponseBuilder.say("I found your existing appointment. The appointment remains confirmed. "
+					+ "Thank you for calling Sears Home Services.");
 		}
-		return response(gather(
+		return voiceResponseBuilder.gather(
 				"/voice/respond",
-				"speech",
-				"auto",
-				"Please say existing appointment if you are calling about that appointment, or new issue to start a new service request."));
+				"Please say existing appointment if you are calling about that appointment, or new issue to start a new service request.");
 	}
 
 	private String handleResumeIncompleteSession(CallSession session, String speech) {
 		if (isNewIssueIntent(speech)) {
 			startNewIssue(session);
 			callSessionRepository.save(session);
-			return response(gather(
+			return voiceResponseBuilder.gather(
 					"/voice/respond",
-					"speech",
-					"auto",
-					"No problem. " + questionFor(session)));
+					"No problem. " + questionFor(session));
 		}
 		if (isContinueIntent(speech)) {
 			session.setCurrentStage(nextMissingStage(session));
 			callSessionRepository.save(session);
-			return response(gather(
+			return voiceResponseBuilder.gather(
 					"/voice/respond",
-					"speech",
-					"auto",
-					"Let's continue. " + questionFor(session)));
+					"Let's continue. " + questionFor(session));
 		}
-		return response(gather(
+		return voiceResponseBuilder.gather(
 				"/voice/respond",
-				"speech",
-				"auto",
-				"Please say continue to resume the request we started, or new issue to start over."));
+				"Please say continue to resume the request we started, or new issue to start over.");
 	}
 
 	private void copyDiagnosticState(CallSession source, CallSession target) {
@@ -542,33 +516,4 @@ public class VoiceWebhookService {
 	private record AvailabilityWindow(LocalDateTime start, LocalDateTime end) {
 	}
 
-	private String response(String body) {
-		return """
-				<?xml version="1.0" encoding="UTF-8"?>
-				<Response>
-				%s
-				</Response>
-				""".formatted(body);
-	}
-
-	private String gather(String action, String input, String speechTimeout, String prompt) {
-		return """
-				<Gather action="%s" method="POST" input="%s" speechTimeout="%s">
-				%s
-				</Gather>
-				""".formatted(action, input, speechTimeout, say(prompt));
-	}
-
-	private String say(String text) {
-		return "<Say>" + escapeXml(text) + "</Say>";
-	}
-
-	private String escapeXml(String value) {
-		return value
-				.replace("&", "&amp;")
-				.replace("<", "&lt;")
-				.replace(">", "&gt;")
-				.replace("\"", "&quot;")
-				.replace("'", "&apos;");
-	}
 }

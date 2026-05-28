@@ -12,7 +12,7 @@ See [TECHNICAL_DESIGN.md](TECHNICAL_DESIGN.md) for architectural decisions, trad
 - Spring Data JPA / Hibernate
 - PostgreSQL 16
 - Docker Compose
-- Twilio Voice webhooks and TwiML
+- Twilio Voice webhooks / TwiML or Telnyx TeXML
 - OpenAI Responses API for dialogue extraction
 - Maven
 
@@ -20,7 +20,7 @@ See [TECHNICAL_DESIGN.md](TECHNICAL_DESIGN.md) for architectural decisions, trad
 
 ```text
 Caller
-  -> Twilio phone number
+  -> Twilio or Telnyx phone number
   -> POST /voice/incoming
   -> VoiceWebhookController
   -> VoiceWebhookService
@@ -29,8 +29,8 @@ Caller
       -> TroubleshootingScriptService
       -> SchedulingService
       -> AppointmentService
-  -> TwiML response back to Twilio
-  -> Caller hears Twilio text-to-speech
+  -> XML voice response back to the provider
+  -> Caller hears provider text-to-speech
 ```
 
 The voice flow is intentionally split between AI extraction and deterministic backend logic:
@@ -196,6 +196,8 @@ Twilio parameters used:
 - `From`
 - `SpeechResult`
 
+Telnyx TeXML uses the same key request parameters for this flow, so the same endpoints can be used when `VOICE_PROVIDER=telnyx`.
+
 ### Scheduling
 
 ```text
@@ -271,6 +273,9 @@ TWILIO_PHONE_NUMBER=+19129551708
 AI_API_KEY=your_openai_api_key
 AI_MODEL=gpt-4o-mini
 
+VOICE_PROVIDER=twilio
+# Use VOICE_PROVIDER=telnyx to return Telnyx TeXML instead of Twilio TwiML.
+
 MAIL_HOST=smtp.example.com
 MAIL_PORT=587
 MAIL_USERNAME=mail_username
@@ -335,7 +340,32 @@ $response.Content
 
 Continue with the same `CallSid` for the whole conversation. Use a new `CallSid` for a clean new test.
 
-## Twilio And Ngrok Setup
+## Voice Provider Setup
+
+The app supports a small provider abstraction:
+
+```java
+public interface VoiceResponseBuilder {
+    String gather(String action, String prompt);
+    String say(String prompt);
+}
+```
+
+Twilio is the default provider. Set the provider with:
+
+```env
+VOICE_PROVIDER=twilio
+```
+
+or switch to Telnyx with:
+
+```env
+VOICE_PROVIDER=telnyx
+```
+
+`twilio` returns TwiML with `<Gather input="speech">` and `<Say>`. `telnyx` remains available and returns TeXML with `<Gather input="speech">`, `<Say>`, and `transcriptionEngine="Telnyx"`.
+
+### Twilio And Ngrok Setup
 
 Expose the local app:
 
@@ -358,6 +388,29 @@ URL: https://your-ngrok-domain.ngrok-free.dev/voice/incoming
 ```
 
 For trial accounts, Twilio may block calls from unverified caller IDs. If a call log shows warning `21264 From number not verified`, Twilio rejected the call before it reached this app. In that case, test with simulated webhook requests or use an upgraded/verified Twilio account.
+
+### Telnyx And Ngrok Setup
+
+Set:
+
+```env
+VOICE_PROVIDER=telnyx
+```
+
+Expose the local app:
+
+```powershell
+ngrok http 8080
+```
+
+In Telnyx, create or edit a TeXML Application and configure the Voice URL:
+
+```text
+Method: POST
+URL: https://your-ngrok-domain.ngrok-free.dev/voice/incoming
+```
+
+Then assign your Telnyx phone number to that TeXML Application. Telnyx will request XML instructions from `/voice/incoming`; each speech gather posts the transcript to `/voice/respond` as `SpeechResult`.
 
 ## Useful Database Checks
 
@@ -423,6 +476,7 @@ Build the app:
 ## Design Tradeoffs
 
 - Twilio is used for telephony, speech gathering, and text-to-speech through TwiML. This keeps the demo small and avoids separate STT/TTS services.
+- Telnyx TeXML is supported as an alternate provider with the same voice workflow.
 - OpenAI is used for structured dialogue extraction and adaptive safe troubleshooting prompts, not for scheduling decisions.
 - Scheduling and appointment creation are deterministic Java logic for reliability and testability.
 - PostgreSQL stores both scheduling data and call-session memory.

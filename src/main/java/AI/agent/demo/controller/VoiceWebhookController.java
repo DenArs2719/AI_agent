@@ -18,7 +18,7 @@ public class VoiceWebhookController {
 	public String incomingCall(
 			@RequestParam(required = false, name = "CallSid") String callSid,
 			@RequestParam(required = false, name = "From") String callerPhoneNumber) {
-		log.info("Received Twilio incoming call webhook. callSid={}, from={}", callSid, callerPhoneNumber);
+		log.info("Received voice incoming call webhook. callSid={}, from={}", callSid, callerPhoneNumber);
 		return voiceWebhookService.incomingCallInstructions(callSid, callerPhoneNumber);
 	}
 
@@ -27,7 +27,7 @@ public class VoiceWebhookController {
 			@RequestParam(required = false, name = "CallSid") String callSid,
 			@RequestParam(required = false, name = "From") String callerPhoneNumber,
 			@RequestParam(required = false, name = "SpeechResult") String speechResult) {
-		log.info("Received Twilio speech webhook. callSid={}, from={}, speechPresent={}",
+		log.info("Received voice speech webhook. callSid={}, from={}, speechPresent={}",
 				callSid,
 				callerPhoneNumber,
 				speechResult != null && !speechResult.isBlank());
